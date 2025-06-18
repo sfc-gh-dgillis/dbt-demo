@@ -19,68 +19,76 @@ GRANT USAGE on WAREHOUSE dbt_demo_xxl_wh TO ROLE dbt_demo_rw;
 -- -----------------------------------------------------------------------
 -- Database Usage Grants
 -- -----------------------------------------------------------------------
-GRANT USAGE ON DATABASE dbt_demo TO ROLE dbt_demo_ro;
-GRANT USAGE ON DATABASE dbt_demo TO ROLE dbt_demo_ro;
+GRANT USAGE ON DATABASE dev_dbt_demo TO ROLE dbt_demo_ro;
+GRANT USAGE ON DATABASE dev_dbt_demo TO ROLE dbt_demo_rw;
 
 -- -----------------------------------------------------------------------
 -- Database Task Grants
 -- -----------------------------------------------------------------------
-GRANT OPERATE ON ALL TASKS IN DATABASE dbt_demo TO ROLE dbt_demo_rw;
-GRANT OPERATE ON FUTURE TASKS IN DATABASE dbt_demo TO ROLE dbt_demo_rw;
+GRANT OPERATE ON ALL TASKS IN DATABASE dev_dbt_demo TO ROLE dbt_demo_rw;
+GRANT OPERATE ON FUTURE TASKS IN DATABASE dev_dbt_demo TO ROLE dbt_demo_rw;
 
 -- -----------------------------------------------------------------------
 -- Schema Usage Grants
 -- -----------------------------------------------------------------------
-GRANT USAGE ON SCHEMA dbt_demo.raw TO ROLE dbt_demo_ro;
-GRANT USAGE ON SCHEMA dbt_demo.raw TO ROLE dbt_demo_rw;
+GRANT USAGE ON SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_ro;
+GRANT USAGE ON SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_rw;
 
-GRANT USAGE ON SCHEMA dbt_demo.curated TO ROLE dbt_demo_ro;
-GRANT USAGE ON SCHEMA dbt_demo.curated TO ROLE dbt_demo_rw;
+GRANT USAGE ON SCHEMA dev_dbt_demo.curated TO ROLE dbt_demo_ro;
+GRANT USAGE ON SCHEMA dev_dbt_demo.curated TO ROLE dbt_demo_rw;
 
-GRANT USAGE ON SCHEMA dbt_demo.modeled TO ROLE dbt_demo_ro;
-GRANT USAGE ON SCHEMA dbt_demo.modeled TO ROLE dbt_demo_rw;
+GRANT USAGE ON SCHEMA dev_dbt_demo.modeled TO ROLE dbt_demo_ro;
+GRANT USAGE ON SCHEMA dev_dbt_demo.modeled TO ROLE dbt_demo_rw;
 
--- -----------------------------------------------------------------------
--- RAW Schema Read / Write Grants
--- -----------------------------------------------------------------------
-GRANT CREATE FILE FORMAT ON SCHEMA dbt_demo.raw TO ROLE dbt_demo_rw;
-GRANT CREATE TABLE ON SCHEMA dbt_demo.raw TO ROLE dbt_demo_rw;
-GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA dbt_demo.raw TO ROLE dbt_demo_rw;
-GRANT CREATE VIEW ON SCHEMA dbt_demo.raw TO ROLE dbt_demo_rw;
-GRANT SELECT ON FUTURE VIEWS IN SCHEMA dbt_demo.raw TO ROLE dbt_demo_rw;
-GRANT CREATE STAGE ON SCHEMA dbt_demo.raw TO ROLE dbt_demo_rw;
-GRANT USAGE ON FUTURE STAGES IN SCHEMA dbt_demo.raw TO ROLE dbt_demo_rw;
-GRANT CREATE PIPE ON SCHEMA dbt_demo.raw TO ROLE dbt_demo_rw;
-GRANT CREATE STREAM ON SCHEMA dbt_demo.raw TO ROLE dbt_demo_rw;
-GRANT CREATE EXTERNAL TABLE ON SCHEMA dbt_demo.raw TO ROLE dbt_demo_rw;
+GRANT USAGE ON FUTURE STAGES IN SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_rw;
 
 -- -----------------------------------------------------------------------
--- Schema Read Only Grants
+-- RAW Schema-Level Read/Write Grants
 -- -----------------------------------------------------------------------
-GRANT SELECT ON FUTURE TABLES IN SCHEMA dbt_demo.raw TO ROLE dbt_demo_ro;
+GRANT CREATE FILE FORMAT ON SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_rw;
+GRANT CREATE TABLE ON SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_rw;
+GRANT CREATE VIEW ON SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_rw;
+GRANT CREATE STAGE ON SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_rw;
+GRANT CREATE PIPE ON SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_rw;
+GRANT CREATE STREAM ON SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_rw;
+GRANT CREATE EXTERNAL TABLE ON SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_rw;
+GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_rw;
+GRANT SELECT ON FUTURE VIEWS IN SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_rw;
 
 -- -----------------------------------------------------------------------
--- CURATED Schema Read / Write Grants
+-- RAW Schema-Level Read Only Grants
 -- -----------------------------------------------------------------------
-GRANT CREATE TABLE ON SCHEMA dbt_demo.curated TO ROLE dbt_demo_rw;
-GRANT SELECT ON FUTURE TABLES IN SCHEMA dbt_demo.curated TO ROLE dbt_demo_ro;
-GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA dbt_demo.curated TO ROLE dbt_demo_rw;
-
-GRANT CREATE VIEW ON SCHEMA dbt_demo.curated TO ROLE dbt_demo_rw;
-GRANT SELECT ON FUTURE VIEWS IN SCHEMA dbt_demo.curated TO ROLE dbt_demo_rw;
-GRANT CREATE TASK ON SCHEMA dbt_demo.curated TO ROLE dbt_demo_rw;
+GRANT SELECT ON FUTURE TABLES IN SCHEMA dev_dbt_demo.raw TO ROLE dbt_demo_ro;
 
 -- -----------------------------------------------------------------------
--- MODELED Schema Read / Write Grants
+-- CURATED Schema-Level Read/Write Grants
 -- -----------------------------------------------------------------------
-GRANT CREATE TABLE ON SCHEMA dbt_demo.modeled TO ROLE dbt_demo_rw;
-GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA dbt_demo.modeled TO ROLE dbt_demo_rw;
-GRANT CREATE VIEW ON SCHEMA dbt_demo.modeled TO ROLE dbt_demo_rw;
-GRANT SELECT ON FUTURE VIEWS IN SCHEMA dbt_demo.modeled TO ROLE dbt_demo_rw;
-GRANT CREATE DYNAMIC TABLE ON SCHEMA dbt_demo.modeled TO ROLE dbt_demo_rw;
+GRANT CREATE TABLE ON SCHEMA dev_dbt_demo.curated TO ROLE dbt_demo_rw;
+GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA dev_dbt_demo.curated TO ROLE dbt_demo_rw;
 
-GRANT SELECT ON FUTURE TABLES IN SCHEMA dbt_demo.modeled TO ROLE dbt_demo_ro;
-GRANT SELECT ON FUTURE VIEWS IN SCHEMA dbt_demo.modeled TO ROLE dbt_demo_ro;
+GRANT CREATE VIEW ON SCHEMA dev_dbt_demo.curated TO ROLE dbt_demo_rw;
+GRANT SELECT ON FUTURE VIEWS IN SCHEMA dev_dbt_demo.curated TO ROLE dbt_demo_rw;
+GRANT CREATE TASK ON SCHEMA dev_dbt_demo.curated TO ROLE dbt_demo_rw;
+
+-- -----------------------------------------------------------------------
+-- CURATED Schema-Level Read Only Grants
+-- -----------------------------------------------------------------------
+GRANT SELECT ON FUTURE TABLES IN SCHEMA dev_dbt_demo.curated TO ROLE dbt_demo_ro;
+
+-- -----------------------------------------------------------------------
+-- MODELED Schema-Level Read/Write Grants
+-- -----------------------------------------------------------------------
+GRANT CREATE TABLE ON SCHEMA dev_dbt_demo.modeled TO ROLE dbt_demo_rw;
+GRANT CREATE VIEW ON SCHEMA dev_dbt_demo.modeled TO ROLE dbt_demo_rw;
+GRANT CREATE DYNAMIC TABLE ON SCHEMA dev_dbt_demo.modeled TO ROLE dbt_demo_rw;
+GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA dev_dbt_demo.modeled TO ROLE dbt_demo_rw;
+GRANT SELECT ON FUTURE VIEWS IN SCHEMA dev_dbt_demo.modeled TO ROLE dbt_demo_rw;
+
+-- -----------------------------------------------------------------------
+-- MODELED Schema-Level Read Only Grants
+-- -----------------------------------------------------------------------
+GRANT SELECT ON FUTURE TABLES IN SCHEMA dev_dbt_demo.modeled TO ROLE dbt_demo_ro;
+GRANT SELECT ON FUTURE VIEWS IN SCHEMA dev_dbt_demo.modeled TO ROLE dbt_demo_ro;
 
 -- -----------------------------------------------------------------------
 -- ROLE to ROLE Grants
@@ -91,4 +99,4 @@ GRANT ROLE dbt_demo_ro TO ROLE dbt_demo_analyst;
 -- -----------------------------------------------------------------------
 -- ROLE to USER Grants
 -- -----------------------------------------------------------------------
-GRANT ROLE dbt_demo_data_engineer to USER dbdbt;
+GRANT ROLE dbt_demo_data_engineer to USER tastyb;
