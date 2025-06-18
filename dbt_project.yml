@@ -1,6 +1,6 @@
 config-version: 2
 
-name: "dbt_snowflake_demo"
+name: tasty_bytes
 version: "3.0.0"
 require-dbt-version: ">=1.9.0"
 
@@ -22,13 +22,13 @@ vars:
   "dbt_date:time_zone": "America/New_York"
 
 seeds:
-  dbt_snowflake_demo:
+  tasty_bytes:
     +schema: raw
     tasty-data:
       +enabled: "{{ var('load_source_data', false) }}"
 
 models:
-  dbt_snowflake_demo:
+  tasty_bytes:
     staging:
       +materialized: view
     marts:
