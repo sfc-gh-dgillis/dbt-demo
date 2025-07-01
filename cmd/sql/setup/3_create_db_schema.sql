@@ -12,6 +12,9 @@ CREATE SCHEMA IF NOT EXISTS dev_dbt_demo.curated
 CREATE SCHEMA IF NOT EXISTS dev_dbt_demo.modeled
     COMMENT = 'dbt demo - Modeled object schema';
 
+CREATE SCHEMA IF NOT EXISTS dev_dbt_demo.utilities
+    COMMENT = 'dbt demo - global utilities and tools';
+
 SHOW DATABASES;
 
 USE DATABASE dev_dbt_demo;

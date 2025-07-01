@@ -1,0 +1,7 @@
+definition_version: 2
+entities:
+  dbt_demo_sysadmin:
+    type: project
+    stage: "dbt_demo_sysadmin"
+    artifacts:
+      - definitions/*

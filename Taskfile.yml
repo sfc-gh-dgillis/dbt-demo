@@ -1,0 +1,89 @@
+version: '3'
+
+includes:
+  admin: ./tasks/admin-tasks.yml
+  cli: ./tasks/cli-tasks.yml
+  ssh: ./tasks/ssh-tasks.yml
+
+env:
+  ENV_DIR: .env
+  TEMP_DIR: tmp
+
+dotenv: ['{{.ENV_DIR}}/{{env "FILENAME"}}']
+
+tasks:
+
+  create-user:
+    summary: |
+      Create a Snowflake USER and grant any roles found in the `CU_GRANT_ROLES` environment variable. 
+      CU_GRANT_ROLES environment variable should have a JSON string which has no spaces, 
+      e.g. '["USERADMIN"]'.
+
+      Usage: `FILENAME=demo-create-user.env CU_PASSWORD=SoSoFake! task create-user`
+
+    cmds:
+      - task: admin:create-user
+      - task: admin:grant-roles
+        vars:
+          ROLES_TO_GRANT: $CU_GRANT_ROLES
+          USER_TO_GRANT: $CU_LOGIN_NAME
+          AUTH_CONNECTION_NAME: $CU_ADMIN_CONNECTION_NAME
+
+  add-keypair-connection:
+    summary: |
+      Create the KEYPAIR connection. Usage: `FILENAME=some-file-name.env task add-keypair-connection`
+
+      This task will create a new connection using the SSH keypair method.
+      
+      A new set of private and public ssh keys will be created and added to ~/.ssh/snowflake as well as
+      creating a sql file with the alter statement needed for an admin to add the public key to the user
+      account in Snowflake.
+    cmds:
+      - task: ssh:gen-ssh-dir
+      - task: ssh:gen-rsa-keys
+        vars:
+          PRIVATE_KEY_FILE_PATH:
+            sh: python3 tasks/pyutil/gen_rsa_key_path.py $CKC_SNOWFLAKE_CLI_CONNECTION_NAME private
+          PUBLIC_KEY_FILE_PATH:
+            sh: python3 tasks/pyutil/gen_rsa_key_path.py $CKC_SNOWFLAKE_CLI_CONNECTION_NAME public
+      - task: cli:connection-add
+        vars:
+          CONNECTION_NAME: $CKC_SNOWFLAKE_CLI_CONNECTION_NAME
+          CONNECTION_ACCOUNT_IDENTIFIER: $CKC_SNOWFLAKE_CLI_CONNECTION_ACCOUNT_IDENTIFIER
+          CONNECTION_USERNAME: $CKC_SNOWFLAKE_CLI_CONNECTION_USERNAME
+          CONNECTION_ROLE: $CKC_SNOWFLAKE_CLI_CONNECTION_ROLE
+          CONNECTION_PRIVATE_KEY_FILE_PATH:
+            sh: python3 tasks/pyutil/gen_rsa_key_path.py $CKC_SNOWFLAKE_CLI_CONNECTION_NAME private
+      - task: ssh:prep-public-key-sql
+        vars:
+          TEMP_DIR: $TEMP_DIR
+          PUBLIC_KEY_FILE_PATH:
+            sh: python3 tasks/pyutil/gen_rsa_key_path.py $CKC_SNOWFLAKE_CLI_CONNECTION_NAME public
+          ASSOCIATE_KEY_WITH_USERNAME: $CKC_SNOWFLAKE_CLI_CONNECTION_USERNAME
+      - task: admin:add-rsa-key-to-snowflake
+        vars:
+          TEMP_DIR: $TEMP_DIR
+          AUTH_CONNECTION_NAME: $CKC_ADMIN_CONNECTION_NAME
+        preconditions:
+          - sh: test -n "$CKC_ADMIN_CONNECTION_NAME" # Checks if  admin connection name is set. If not set, the task is skipped.
+      - task: cli:connection-test
+        vars:
+          CONNECTION_NAME: $CKC_SNOWFLAKE_CLI_CONNECTION_NAME
+          CONNECTION_TYPE: KEYPAIR
+        preconditions:
+          - sh: test -n "$CKC_ADMIN_CONNECTION_NAME" # Checks if  admin connection name is set. If not set, the task is skipped.
+
+  add-pat:
+    summary: |
+      blah.
+    cmds:
+      - task: admin:add-pat-to-user
+        vars:
+          ADMIN_CONNECTION_NAME: $AP_ADMIN_CONNECTION_NAME
+          USERNAME: $AP_USERNAME
+          TOKEN_NAME: $AP_TOKEN_NAME
+          ROLE_RESTRICTION: $AP_ROLE_RESTRICTION
+          DAYS_TO_EXPIRY: $AP_DAYS_TO_EXPIRY
+          MINS_TO_BYPASS_NETWORK_POLICY_REQUIREMENT: $AP_MINS_TO_BYPASS_NETWORK_POLICY_REQUIREMENT
+          COMMENT: $AP_COMMENT
+          IF_EXISTS: $AP_IF_EXISTS

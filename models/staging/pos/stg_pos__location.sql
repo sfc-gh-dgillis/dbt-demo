@@ -11,7 +11,7 @@ renamed as (
     select
         location_id,
         placekey,
-        location,
+        location as location_name,
         city,
         region,
         iso_country_code,
