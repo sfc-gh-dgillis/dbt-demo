@@ -1,11 +1,11 @@
 USE ROLE sysadmin;
 
-drop WAREHOUSE dbt_demo_xs_wh;
-drop WAREHOUSE dbt_demo_s_wh;
-drop WAREHOUSE dbt_demo_m_wh;
-drop WAREHOUSE dbt_demo_l_wh;
-drop WAREHOUSE dbt_demo_xl_wh;
-drop WAREHOUSE dbt_demo_xxl_wh;
+-- drop WAREHOUSE dbt_demo_xs_wh;
+-- drop WAREHOUSE dbt_demo_s_wh;
+-- drop WAREHOUSE dbt_demo_m_wh;
+-- drop WAREHOUSE dbt_demo_l_wh;
+-- drop WAREHOUSE dbt_demo_xl_wh;
+-- drop WAREHOUSE dbt_demo_xxl_wh;
 
 CREATE OR REPLACE WAREHOUSE dbt_demo_xs_wh
     WITH WAREHOUSE_SIZE = XSMALL
