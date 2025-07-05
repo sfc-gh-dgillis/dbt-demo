@@ -9,22 +9,32 @@ class TestConcatenateDictValues(unittest.TestCase):
 
     def test_with_nulls(self):
         d = {'a': None, 'b': '', 'c': []}
-        expected = '_dbt_utils_surrogate_key_null_-_dbt_utils_surrogate_key_null_-_dbt_utils_surrogate_key_null_'
-        self.assertEqual(concatenate_dict_values(d), expected)
+        expected = '_SURROGATE_KEY_NULL_-_SURROGATE_KEY_NULL_-_SURROGATE_KEY_NULL_'
+        self.assertEqual(expected, concatenate_dict_values(d))
 
     def test_mixed(self):
         d = {'a': 'foo', 'b': '', 'c': 0}
-        expected = 'foo-_dbt_utils_surrogate_key_null_-0'
-        self.assertEqual(concatenate_dict_values(d), expected)
+        expected = 'FOO-_SURROGATE_KEY_NULL_-0'
+        self.assertEqual(expected, concatenate_dict_values(d) )
 
     def test_custom_null(self):
         d = {'a': None, 'b': 'bar'}
-        self.assertEqual(concatenate_dict_values(d, default_null_value='NULL'), 'NULL-bar')
+        self.assertEqual( 'NULL-BAR',concatenate_dict_values(d, default_null_value='NULL'))
 
 
     def test_sorting(self):
         d = {'a': None, 'b': 'bar'}
-        self.assertEqual(concatenate_dict_values(d, default_null_value='NULL'), 'NULL-bar')
+        self.assertEqual('NULL-BAR',concatenate_dict_values(d, default_null_value='NULL') )
+
+    def test_case_sensitivity(self):
+        d = {'a': 'foo', 'b': 'Bar', 'c': 'bAz'}
+        expected = 'FOO-BAR-BAZ'
+        self.assertEqual(concatenate_dict_values(d), expected)
+
+    def test_case_sensitivity_with_null(self):
+        d = {'a': 'foo', 'b': None, 'c': 'bAz'}
+        expected = 'FOO-_SURROGATE_KEY_NULL_-BAZ'
+        self.assertEqual(concatenate_dict_values(d), expected)
 
 
 if __name__ == '__main__':
