@@ -11,13 +11,13 @@ WITH flattened_cte AS (SELECT m.menu_item_id                        AS menu_item
                               hm.value:is_nut_free_flag::BOOLEAN    AS has_nuts,
                               m.cost_of_goods_usd                   AS cost_of_goods_usd,
                               m.sale_price_usd                      AS sale_price_usd
-                       FROM {{ stg_pos__menu }} m,
+                       FROM {{ ref('stg_pos__menu') }} m,
                             LATERAL FLATTEN(INPUT => m.menu_item_health_metrics_obj:menu_item_health_metrics) hm),
 
-     pk_cte AS (SELECT m.menu_item_id
-                FROM flattened_cte m)
+     pk_cte AS (SELECT distinct menu_item_id
+                FROM flattened_cte)
 
-SELECT utilities.gen_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS menu_key,
+SELECT utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS menu_item_key,
        fc.menu_item_id,
        fc.menu_item_name,
        fc.item_category,
@@ -30,9 +30,8 @@ SELECT utilities.gen_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS me
        fc.is_gluten_free,
        fc.has_nuts,
        fc.cost_of_goods_usd,
-       fc.sale_price_usd,
-       fc.menu_item_health_metrics_obj
+       fc.sale_price_usd
 FROM flattened_cte fc
 
          INNER JOIN pk_cte pkc
-                    ON fc.menu_item_id = pkc.menu_item_id;
+                    ON fc.menu_item_id = pkc.menu_item_id
