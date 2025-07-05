@@ -1,7 +1,7 @@
 WITH pk_cte AS (SELECT f.franchise_id
                 FROM {{ ref('stg_pos__franchise') }} f)
 
-SELECT utilities.gen_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS franchise_key,
+SELECT utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS franchise_key,
        f.franchise_id,
        f.first_name,
        f.last_name,
