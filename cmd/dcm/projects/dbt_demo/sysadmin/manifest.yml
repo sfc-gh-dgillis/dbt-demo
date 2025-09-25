@@ -1,8 +1,0 @@
-manifest_version: 1.0
-
-include_definitions:
-  - definitions/.*
-
-configurations:
-  default:
-    env: "DEV"
