@@ -23,8 +23,8 @@ renamed as (
         sign_up_date,
         birthday_date,
         e_mail,
-        phone_number
-
+        phone_number,
+        last_update_ts
     from source
 
 )

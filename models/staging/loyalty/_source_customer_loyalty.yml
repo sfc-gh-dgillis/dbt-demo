@@ -35,4 +35,5 @@ sources:
             data_type: varchar
           - name: phone_number
             data_type: varchar
-
+          - name: last_update_ts
+            data_type: timestamp
