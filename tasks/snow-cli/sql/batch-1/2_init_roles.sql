@@ -14,8 +14,6 @@ CREATE ROLE IF NOT EXISTS dbt_demo_data_engineer
 CREATE ROLE IF NOT EXISTS dbt_demo_analyst
     COMMENT = 'Functional role for dev_dbt_demo - business function alignment is generally for Data Analysts';
 
-{#CREATE ROLE myco_git_admin;#}
-
 -- grant access roles to functional roles
 GRANT ROLE dev_dbt_demo_rw TO ROLE dev_dbt_demo_data_engineer;
 GRANT ROLE dev_dbt_demo_ro TO ROLE dev_dbt_demo_analyst;

@@ -9,7 +9,7 @@ op run -- \
   --args '{database: dev_dbt_demo, schema: utilities}'
 
 # test that the udf was created successfully and can be used
-snow sql -c demo_bmeyer_keypair_auth -q "use warehouse dbt_demo_xs_wh; select dev_dbt_demo.utilities.udf_concatenate_object_values(to_object(parse_json('{\"key1\": \"value1\", \"key2\": \"value2\"}')));"
+snow sql -c demo_dgillis_keypair_auth -q "use warehouse dbt_demo_xs_wh; select dev_dbt_demo.utilities.udf_concatenate_object_values(to_object(parse_json('{\"key1\": \"value1\", \"key2\": \"value2\"}')));"
 
 op run -- \
   dbt run-operation create_udf_generate_surrogate_key \
@@ -17,4 +17,4 @@ op run -- \
   --args '{database: 'dev_dbt_demo', schema: 'utilities'}'
 
 # test that the udf was created successfully and can be used
-snow sql -c demo_bmeyer_keypair_auth -q "use warehouse dbt_demo_xs_wh; select dev_dbt_demo.utilities.udf_generate_surrogate_key(to_object(parse_json('{\"key1\": \"value1\", \"key2\": \"value2\"}')));"
+snow sql -c demo_dgillis_keypair_auth -q "use warehouse dbt_demo_xs_wh; select dev_dbt_demo.utilities.udf_generate_surrogate_key(to_object(parse_json('{\"key1\": \"value1\", \"key2\": \"value2\"}')));"

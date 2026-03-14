@@ -12,12 +12,9 @@ WITH flattened_cte AS (SELECT m.menu_item_id                        AS menu_item
                               m.cost_of_goods_usd                   AS cost_of_goods_usd,
                               m.sale_price_usd                      AS sale_price_usd
                        FROM {{ ref('stg_pos__menu') }} m,
-                            LATERAL FLATTEN(INPUT => m.menu_item_health_metrics_obj:menu_item_health_metrics) hm),
+                            LATERAL FLATTEN(INPUT => m.menu_item_health_metrics_obj:menu_item_health_metrics) hm)
 
-     pk_cte AS (SELECT distinct menu_item_id
-                FROM flattened_cte)
-
-SELECT utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS menu_item_key,
+SELECT utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL('menu_item_id', menu_item_id)) AS menu_item_key,
        fc.menu_item_id,
        fc.menu_item_name,
        fc.item_category,
@@ -32,6 +29,3 @@ SELECT utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.
        fc.cost_of_goods_usd,
        fc.sale_price_usd
 FROM flattened_cte fc
-
-         INNER JOIN pk_cte pkc
-                    ON fc.menu_item_id = pkc.menu_item_id

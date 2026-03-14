@@ -8,9 +8,9 @@ with pk_cte as (select distinct
                               from {{ ref('stg_pos__menu') }})
 
 select utilities.udf_generate_surrogate_key(o => object_construct_keep_null(pkc.*)) as menu_type_key,
-       spc.menu_type_id,
-       spc.menu_type
-  from distinct_menu_types
+       dmt.menu_type_id,
+       dmt.menu_type
+  from distinct_menu_types dmt
 
          inner join pk_cte pkc
-                    on spc.menu_type_id = pkc.menu_type_id
+                    on dmt.menu_type_id = pkc.menu_type_id
