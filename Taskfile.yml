@@ -35,3 +35,18 @@ tasks:
           WAREHOUSE: dbt_demo_xs_wh
           DATABASE_NAME: dev_dbt_demo
           SCHEMA_NAME: utilities
+
+  demo-teardown:
+    desc: Tears down all Snowflake resources created for the dbt demo.
+    cmds:
+      - task: snowflake-resources-teardown
+
+  snowflake-resources-teardown:
+    desc: Validates Snowflake CLI, then drops the demo database, warehouses, and roles.
+    internal: true
+    cmds:
+      - task: validate-prerequisites:snowcli
+      - task: snow-cli:sort-and-process-sql-folder
+        vars:
+          SQL_SORT_PROCESS_DIR: sql/teardown
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
