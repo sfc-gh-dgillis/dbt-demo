@@ -23,7 +23,19 @@ tasks:
     cmds:
       - task: snowflake-resources-up
 
+      # Must follow the DCM deploy: the clones land in dev_dbt_demo.raw, which
+      # DCM creates.
+      - task: seed-raw-source-tables
+
       - task: dbt:create-udf-concatenate-object-values
+        vars:
+          TARGET: dev-keypair-auth
+          ARGS: '{database: dev_dbt_demo, schema: utilities}'
+
+      # udf_generate_surrogate_key depends on udf_concatenate_object_values and
+      # is called by every model in models/marts, so it must exist before any
+      # marts run.
+      - task: dbt:create-udf-generate-surrogate-key
         vars:
           TARGET: dev-keypair-auth
           ARGS: '{database: dev_dbt_demo, schema: utilities}'
@@ -31,31 +43,188 @@ tasks:
       - task: dbt:test-udf-concatenate-object-values
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          WAREHOUSE: dbt_demo_xs_wh
+          WAREHOUSE: dev_dbt_demo_xs_wh
           DATABASE_NAME: dev_dbt_demo
           SCHEMA_NAME: utilities
 
+  dcm-home-up:
+    desc: Creates the database and schema that hold the DCM project objects.
+    internal: true
+    cmds:
+      # The DCM project object needs a database and schema to live in, and a DCM
+      # project cannot define its own parent. This is the only imperative setup
+      # left, and both plan and deploy require it.
+      - task: snow-cli:sort-and-process-sql-folder
+        vars:
+          SQL_SORT_PROCESS_DIR: sql/bootstrap
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+
   snowflake-resources-up:
-    desc: Validates Snowflake CLI, then creates the demo warehouses, roles, database, and schemas.
+    desc: Validates Snowflake CLI, bootstraps the DCM project home, then reconciles all infrastructure.
     internal: true
     cmds:
       - task: validate-prerequisites:snowcli
+      - task: dcm-home-up
+      - task: snow-cli:dcm-create
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+      # Everything else (database, schemas, warehouses, roles, grants) is
+      # declared in tasks/snow-cli/dcm and converged by DCM.
+      - task: snow-cli:dcm-deploy
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+
+  seed-raw-source-tables:
+    desc: Zero-copy clones the 9 RAW source tables the staging models read from.
+    internal: true
+    cmds:
+      # Data seeding, not a schema declaration, so this stays imperative: DCM has
+      # no DEFINE ... CLONE. DEV only.
       - task: snow-cli:sort-and-process-sql-folder
         vars:
-          SQL_SORT_PROCESS_DIR: sql/init
+          SQL_SORT_PROCESS_DIR: sql/seed
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+
+  dcm-plan:
+    desc: |
+      Previews the infrastructure changes DCM would apply, without applying them.
+      Use `DCM_TARGET=PROD task dcm-plan` to preview prod.
+    cmds:
+      - task: validate-prerequisites:snowcli
+      - task: dcm-home-up
+      - task: snow-cli:dcm-create
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+      - task: snow-cli:dcm-plan
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+
+  demo-up-prod:
+    desc: Reconciles the prod_dbt_demo database, warehouses, and roles. No data seeding.
+    cmds:
+      - task: snowflake-resources-up
+        vars:
+          DCM_TARGET: PROD
 
   demo-teardown:
     desc: Tears down all Snowflake resources created for the dbt demo.
     cmds:
       - task: snowflake-resources-teardown
+      - task: dcm-home-teardown
 
   snowflake-resources-teardown:
-    desc: Validates Snowflake CLI, then drops the demo database, warehouses, and roles.
+    desc: Purges every object managed by the DCM target, then unregisters the project.
     internal: true
     cmds:
       - task: validate-prerequisites:snowcli
-      - task: snow-cli:sort-and-process-sql-folder
+      # purge derives the object list from the same definitions the deploy used,
+      # so teardown can no longer drift from init the way sql/teardown did.
+      - task: snow-cli:dcm-purge
         vars:
-          SQL_SORT_PROCESS_DIR: sql/teardown
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+      # purge leaves the project registration behind; drop removes the metadata.
+      - task: snow-cli:dcm-drop
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+
+  demo-teardown-prod:
+    desc: Purges the prod_dbt_demo resources and unregisters the prod DCM project.
+    cmds:
+      - task: snowflake-resources-teardown
+        vars:
+          DCM_TARGET: PROD
+
+  dcm-home-teardown:
+    desc: Drops the schema holding the dbt demo's DCM project objects.
+    internal: true
+    cmds:
+      # Schema only, never the database. dcm_projects is shared and holds
+      # unrelated DCM projects in other schemas.
+      #
+      # This removes the registrations for BOTH targets. If PROD was ever
+      # deployed, run `task demo-teardown-prod` first or its objects are orphaned
+      # with nothing left to manage them.
+      - task: snow-cli:drop-schema-if-exists
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          SCHEMA_FQN: dcm_projects.dbt_demo
+
+  # -----------------------------------------------------------------------
+  # dbt Projects on Snowflake
+  #
+  # The project runs inside Snowflake as a DBT PROJECT object. Connection
+  # settings come from env.yml (resolved by Snowflake before each run) and are
+  # read by profiles.yml with env_var().
+  # -----------------------------------------------------------------------
+
+  dbt-project-deploy:
+    desc: Stages and deploys the dbt project object to Snowflake (adds a new version if it exists).
+    cmds:
+      - task: validate-prerequisites:snowcli
+      - task: snow-cli:deploy-dbt-project
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
+          DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
+          DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
+
+  dbt-project-compile:
+    desc: Compiles the deployed project object. Cheap way to validate profiles.yml, env.yml, and refs before building.
+    cmds:
+      - task: snow-cli:execute-dbt-project
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
+          DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
+          DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
+          DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dev_dbt_demo_s_wh"}}'
+          DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dev"}}'
+          DBT_ARGS: 'compile --target dev'
+
+  dbt-project-run-marts:
+    desc: Builds the models/marts dimensions and their upstream staging views, with tests.
+    cmds:
+      - task: snow-cli:execute-dbt-project
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
+          DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
+          DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
+          DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dev_dbt_demo_s_wh"}}'
+          DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dev"}}'
+          # +path:models/marts pulls in the 8 upstream staging views (cheap).
+          # The two fact tables are excluded: they are 248M and 673M rows and
+          # are built by dbt-project-run-facts on a larger warehouse.
+          DBT_ARGS: 'build --select +path:models/marts --exclude f_order f_order_line --target dev'
+
+  dbt-project-run-facts:
+    desc: Builds f_order (248M rows) and f_order_line (673M rows) on a larger warehouse. Expensive, opt-in.
+    cmds:
+      - task: snow-cli:execute-dbt-project
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
+          DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
+          DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
+          DBT_WAREHOUSE: '{{.DBT_FACTS_WAREHOUSE | default "dev_dbt_demo_xl_wh"}}'
+          DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dev"}}'
+          # ENV_VARS takes final precedence over env.yml, so the run uses the
+          # larger warehouse without editing the file. Keep this aligned with
+          # DBT_WAREHOUSE above so only one warehouse wakes up.
+          DBT_ENV_VARS: "'DBT_CURRENT_WH' = '{{.DBT_FACTS_WAREHOUSE | default \"dev_dbt_demo_xl_wh\"}}'"
+          DBT_ARGS: 'run --select f_order f_order_line --target dev'
+
+  dbt-project-list:
+    desc: Lists the deployed dbt project objects.
+    cmds:
+      - task: snow-cli:describe-dbt-project
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
+          DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA

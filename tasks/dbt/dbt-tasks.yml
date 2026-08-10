@@ -1,32 +1,49 @@
 version: '3'
 
+# NOTE: every task here runs dbt LOCALLY, so each one passes
+# `--profiles-dir ~/.dbt`. The project root now contains a profiles.yml for dbt
+# Projects on Snowflake, and local dbt (1.9.4) searches the current working
+# directory BEFORE ~/.dbt/. Without the flag, local dbt would pick up the root
+# file, which intentionally has no account, user, or credentials, and fail to
+# connect.
+
 tasks:
 
   debug:
+    desc: Runs dbt debug against the local credentialed profile.
+    internal: true
     cmds:
-      - dbt debug --target dev-tastyb --project-dir .
+      - dbt debug --target dev-keypair-auth --project-dir . --profiles-dir ~/.dbt
 
   create-udf-concatenate-object-values:
+    desc: Creates the udf_concatenate_object_values UDF via dbt run-operation.
+    internal: true
     cmds:
-      - dbt run-operation create_udf_concatenate_object_values --target "{{.TARGET}}" --args "{{.ARGS}}"
+      - dbt run-operation create_udf_concatenate_object_values --target "{{.TARGET}}" --args "{{.ARGS}}" --profiles-dir ~/.dbt
 
-  test-udf-concatenate-object-values:
+  create-udf-generate-surrogate-key:
+    desc: Creates the udf_generate_surrogate_key UDF via dbt run-operation.
+    internal: true
     cmds:
-      - echo "WTF"
-#      - snow sql -c der -q "use warehouse dbt_demo_xs_wh; select dev_dbt_demo.utilities.udf_concatenate_object_values(to_object(parse_json('{\"key1\": \"value1\", \"key2\": \"value2\"}')));"
+      - dbt run-operation create_udf_generate_surrogate_key --target "{{.TARGET}}" --args "{{.ARGS}}" --profiles-dir ~/.dbt
 
   build-all:
+    desc: Builds every model locally.
+    internal: true
     cmds:
-      - dbt build --target dev-tastyb --project-dir .
+      - dbt build --target dev-tastyb --project-dir . --profiles-dir ~/.dbt
 
   build-country-dimension:
+    desc: Builds the d_country dimension locally.
     cmds:
-      - dbt build --target dev-tastyb --project-dir . --select d_country
+      - dbt build --target dev-tastyb --project-dir . --select d_country --profiles-dir ~/.dbt
 
   docs-generate-and-serve:
+    desc: Generates and serves dbt docs locally.
+    internal: true
     cmds:
-      - dbt docs generate --target dev-tastyb --project-dir .
-      - dbt docs serve --target dev-tastyb --project-dir .
+      - dbt docs generate --target dev-tastyb --project-dir . --profiles-dir ~/.dbt
+      - dbt docs serve --target dev-tastyb --project-dir . --profiles-dir ~/.dbt
 
 #  generate-base-model:
 #    cmds:

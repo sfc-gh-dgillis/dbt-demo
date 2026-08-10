@@ -19,3 +19,176 @@ tasks:
     internal: true
     cmds:
       - snow sql --connection "{{.CLI_CONNECTION_NAME}}" --query "DROP DATABASE IF EXISTS {{.DEMO_DATABASE_NAME}};"
+
+  drop-schema-if-exists:
+    desc: Drops the specified Snowflake schema if it exists using the Snowflake CLI.
+    internal: true
+    cmds:
+      - snow sql --connection "{{.CLI_CONNECTION_NAME}}" --query "DROP SCHEMA IF EXISTS {{.SCHEMA_FQN}};"
+
+  # -----------------------------------------------------------------------
+  # DCM (Database Change Management)
+  #
+  # The demo's Snowflake infrastructure (databases, schemas, warehouses, roles,
+  # and grants) is declared in dcm/sources/definitions and reconciled by DCM.
+  # These replace the old imperative sql/init and sql/teardown scripts.
+  #
+  # DCM_TARGET selects a target from dcm/manifest.yml, which bundles the project
+  # identifier with its templating configuration. DEV manages dev_dbt_demo and
+  # the dev_dbt_demo_* warehouses and roles; PROD manages the prod equivalents.
+  # -----------------------------------------------------------------------
+
+  dcm-create:
+    desc: Registers the DCM project object in Snowflake if it does not already exist.
+    internal: true
+    vars:
+      DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
+      DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+    cmds:
+      # Both plan and deploy operate on a registered project object, and neither
+      # creates one. --if-not-exists keeps this idempotent across repeat runs.
+      - >-
+        snow dcm create
+        --connection "{{.CLI_CONNECTION_NAME}}"
+        --from "{{.DCM_PROJECT_DIR}}"
+        --target "{{.DCM_TARGET}}"
+        --if-not-exists
+
+  dcm-plan:
+    desc: Shows what DCM would create, alter, or drop for a target. Applies nothing.
+    internal: true
+    vars:
+      DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
+      DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+    cmds:
+      # --save-output writes out/plan_result.json. Grants do not appear in the
+      # printed summary because DCM models them as a nested property of the
+      # grantee role, so that file is the only way to review grant changes.
+      - >-
+        snow dcm plan
+        --connection "{{.CLI_CONNECTION_NAME}}"
+        --from "{{.DCM_PROJECT_DIR}}"
+        --target "{{.DCM_TARGET}}"
+        --save-output
+
+  dcm-deploy:
+    desc: Reconciles Snowflake with the DCM definitions for a target.
+    internal: true
+    vars:
+      DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
+      DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+      DCM_ALIAS: '{{.DCM_ALIAS | default "task_demo_up"}}'
+    cmds:
+      # --alias tags the deployment so `SHOW DEPLOYMENTS IN DCM PROJECT` reads as
+      # a history rather than a list of anonymous runs.
+      - >-
+        snow dcm deploy
+        --connection "{{.CLI_CONNECTION_NAME}}"
+        --from "{{.DCM_PROJECT_DIR}}"
+        --target "{{.DCM_TARGET}}"
+        --alias "{{.DCM_ALIAS}}"
+
+  dcm-purge:
+    desc: Drops every Snowflake object managed by a DCM target. Irreversible.
+    internal: true
+    vars:
+      DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
+      DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+    cmds:
+      # Replaces sql/teardown. Because the object list is derived from the same
+      # definitions the deploy used, teardown can no longer drift from init.
+      # --force skips the interactive prompt; this deletes data.
+      - >-
+        snow dcm purge
+        --connection "{{.CLI_CONNECTION_NAME}}"
+        --from "{{.DCM_PROJECT_DIR}}"
+        --target "{{.DCM_TARGET}}"
+        --force
+
+  dcm-drop:
+    desc: Removes the DCM project registration. Leaves managed objects untouched.
+    internal: true
+    vars:
+      DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
+      DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+    cmds:
+      # Metadata only, so always run dcm-purge first if the objects should go too.
+      - >-
+        snow dcm drop
+        --connection "{{.CLI_CONNECTION_NAME}}"
+        --from "{{.DCM_PROJECT_DIR}}"
+        --target "{{.DCM_TARGET}}"
+
+  dcm-list:
+    desc: Lists the DCM projects registered in the project home schema.
+    internal: true
+    cmds:
+      - snow dcm list --connection "{{.CLI_CONNECTION_NAME}}"
+
+  stage-dbt-project:
+    desc: Stages a clean copy of the dbt project (excludes .venv, .git, target, logs) for deployment.
+    internal: true
+    vars:
+      DBT_BUILD_DIR: '{{.DBT_BUILD_DIR | default "../../.build/dbt"}}'
+    cmds:
+      - chmod +x cmd/stage-dbt-project.sh
+      - cmd/stage-dbt-project.sh "{{.DBT_BUILD_DIR}}"
+
+  deploy-dbt-project:
+    desc: Stages and deploys the dbt project object, adding a new version if it already exists.
+    internal: true
+    vars:
+      DBT_BUILD_DIR: '{{.DBT_BUILD_DIR | default "../../.build/dbt"}}'
+      DBT_PROJECT_OBJECT_NAME: '{{.DBT_PROJECT_OBJECT_NAME | default "tasty_bytes"}}'
+      DBT_DEFAULT_TARGET: '{{.DBT_DEFAULT_TARGET | default "dev"}}'
+      DBT_RUNTIME_VERSION: '{{.DBT_RUNTIME_VERSION | default "1.11.11"}}'
+    cmds:
+      - task: stage-dbt-project
+        vars:
+          DBT_BUILD_DIR: '{{.DBT_BUILD_DIR}}'
+      # Deliberately no --profiles-dir: the staged project already contains a
+      # credential-free profiles.yml. Pointing at ~/.dbt would supply a
+      # profiles.yml containing a password, which snow dbt deploy rejects.
+      # Omit --force: without it an existing object gains a new version, while
+      # --force runs CREATE OR REPLACE and destroys all versions and run history.
+      - >-
+        snow dbt deploy "{{.DBT_PROJECT_OBJECT_NAME}}"
+        --connection "{{.CLI_CONNECTION_NAME}}"
+        --source "{{.DBT_BUILD_DIR}}"
+        --database "{{.DBT_PROJECT_DATABASE}}"
+        --schema "{{.DBT_PROJECT_SCHEMA}}"
+        --default-target "{{.DBT_DEFAULT_TARGET}}"
+        --dbt-version "{{.DBT_RUNTIME_VERSION}}"
+
+  execute-dbt-project:
+    desc: Executes a dbt command on the deployed project object with an env.yml environment.
+    internal: true
+    vars:
+      DBT_PROJECT_OBJECT_NAME: '{{.DBT_PROJECT_OBJECT_NAME | default "tasty_bytes"}}'
+      DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dev"}}'
+    cmds:
+      # EXECUTE DBT PROJECT via SQL is the only way to select an env.yml
+      # environment or override variables on Snowflake CLI 3.24.1: it has no
+      # --env or --env-vars flags (--environment is an alias for --connection).
+      # --warehouse aligns the outer session with the profiles.yml warehouse so
+      # a single run does not wake two warehouses.
+      - >-
+        snow sql
+        --connection "{{.CLI_CONNECTION_NAME}}"
+        --warehouse "{{.DBT_WAREHOUSE}}"
+        --query "EXECUTE DBT PROJECT {{.DBT_PROJECT_DATABASE}}.{{.DBT_PROJECT_SCHEMA}}.{{.DBT_PROJECT_OBJECT_NAME}}
+        ARGS = '{{.DBT_ARGS}}'
+        ENVIRONMENT = '{{.DBT_ENVIRONMENT}}'{{if .DBT_ENV_VARS}}
+        ENV_VARS = ({{.DBT_ENV_VARS}}){{end}};"
+
+  describe-dbt-project:
+    desc: Describes the deployed dbt project object.
+    internal: true
+    vars:
+      DBT_PROJECT_OBJECT_NAME: '{{.DBT_PROJECT_OBJECT_NAME | default "tasty_bytes"}}'
+    cmds:
+      - >-
+        snow dbt list
+        --connection "{{.CLI_CONNECTION_NAME}}"
+        --in schema "{{.DBT_PROJECT_SCHEMA}}"
+        --database "{{.DBT_PROJECT_DATABASE}}"

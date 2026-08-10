@@ -1,0 +1,40 @@
+# dbt connection profile for dbt Projects on Snowflake.
+#
+# The top-level key must match `profile:` in dbt_project.yml (currently "default").
+#
+# This file is read by Snowflake, not by your local dbt CLI:
+#   - `account` and `user` are ignored. The project runs under the Snowflake
+#     account and user that issued EXECUTE DBT PROJECT. dbt still requires the
+#     keys to exist, so they carry placeholder values.
+#   - There is deliberately no `password`, `authenticator`, or `private_key_path`.
+#     `snow dbt deploy` refuses to deploy a profiles.yml that contains a password.
+#
+# Every connection field is supplied by env.yml, which Snowflake resolves before
+# each run. Change environments (dev / dev_user / prod) rather than editing here.
+#
+# NOTE: local dbt (1.9.4) looks for profiles.yml in the current working directory
+# BEFORE ~/.dbt/. Local commands in tasks/dbt/dbt-tasks.yml therefore pass
+# `--profiles-dir ~/.dbt` so they keep using your credentialed profile.
+
+default:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "not needed"
+      user: "not needed"
+      role: "{{ env_var('DBT_CURRENT_ROLE') }}"
+      database: "{{ env_var('DBT_CURRENT_DB') }}"
+      schema: "{{ env_var('DBT_CURRENT_SCHEMA') }}"
+      warehouse: "{{ env_var('DBT_CURRENT_WH') }}"
+      threads: 8
+
+    prod:
+      type: snowflake
+      account: "not needed"
+      user: "not needed"
+      role: "{{ env_var('DBT_CURRENT_ROLE') }}"
+      database: "{{ env_var('DBT_CURRENT_DB') }}"
+      schema: "{{ env_var('DBT_CURRENT_SCHEMA') }}"
+      warehouse: "{{ env_var('DBT_CURRENT_WH') }}"
+      threads: 8
