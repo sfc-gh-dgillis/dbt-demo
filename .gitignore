@@ -36,5 +36,11 @@ dbt_packages/
 target/
 logs/
 
+# staged dbt project payload for snow dbt deploy
+.build/
+
+# DCM plan/deploy artifacts written by --save-output
+tasks/snow-cli/out/
+
 # .env files
 .env/demo.env
