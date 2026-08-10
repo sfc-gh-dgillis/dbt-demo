@@ -21,8 +21,7 @@ tasks:
       if using a custom .env file (filename does not have to be custom.env, but must end with .env).
 
     cmds:
-      - task: validate-prerequisites:snowcli
-        silent: true
+      - task: snowflake-resources-up
 
       - task: dbt:create-udf-concatenate-object-values
         vars:
@@ -35,6 +34,16 @@ tasks:
           WAREHOUSE: dbt_demo_xs_wh
           DATABASE_NAME: dev_dbt_demo
           SCHEMA_NAME: utilities
+
+  snowflake-resources-up:
+    desc: Validates Snowflake CLI, then creates the demo warehouses, roles, database, and schemas.
+    internal: true
+    cmds:
+      - task: validate-prerequisites:snowcli
+      - task: snow-cli:sort-and-process-sql-folder
+        vars:
+          SQL_SORT_PROCESS_DIR: sql/init
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
 
   demo-teardown:
     desc: Tears down all Snowflake resources created for the dbt demo.
