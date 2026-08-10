@@ -26,3 +26,18 @@ CREATE DATABASE IF NOT EXISTS dcm_projects
 
 CREATE SCHEMA IF NOT EXISTS dcm_projects.dbt_demo
     COMMENT = 'DCM projects for the dbt demo: dbt_demo_dev and dbt_demo_prod.';
+
+-- -----------------------------------------------------------------------
+-- Inherited grants (public preview)
+--
+-- dcm/sources/definitions/grants.sql expresses all data access with
+-- `GRANT INHERITED ... ON ALL <type> IN <container>`, which is only valid syntax
+-- while this account-level parameter is ENABLED. Without it the DCM deploy fails
+-- with an unhelpful SQL compilation error, so it is enabled here rather than
+-- left as a manual prerequisite.
+--
+-- Account-level and therefore broader than this demo. Remove this statement if
+-- you would rather opt in deliberately, and see the note at the top of
+-- grants.sql for why inherited grants are used at all.
+-- -----------------------------------------------------------------------
+ALTER ACCOUNT SET FEATURE_RBAC_INHERITED_GRANTS = 'ENABLED';
