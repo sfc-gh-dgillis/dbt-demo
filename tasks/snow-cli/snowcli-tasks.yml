@@ -77,16 +77,20 @@ tasks:
     vars:
       DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
       DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-      DCM_ALIAS: '{{.DCM_ALIAS | default "task_demo_up"}}'
+      DCM_ALIAS: '{{.DCM_ALIAS | default "demo_up"}}'
     cmds:
       # --alias tags the deployment so `SHOW DEPLOYMENTS IN DCM PROJECT` reads as
       # a history rather than a list of anonymous runs.
+      #
+      # Deployment aliases must be UNIQUE per project: reusing one fails with
+      # "There is already a version exists with alias <x>", which would break
+      # every demo-up after the first. The timestamp suffix keeps them unique.
       - >-
         snow dcm deploy
         --connection "{{.CLI_CONNECTION_NAME}}"
         --from "{{.DCM_PROJECT_DIR}}"
         --target "{{.DCM_TARGET}}"
-        --alias "{{.DCM_ALIAS}}"
+        --alias "{{.DCM_ALIAS}}_$(date +%Y%m%d_%H%M%S)"
 
   dcm-purge:
     desc: Drops every Snowflake object managed by a DCM target. Irreversible.
@@ -123,7 +127,13 @@ tasks:
     desc: Lists the DCM projects registered in the project home schema.
     internal: true
     cmds:
-      - snow dcm list --connection "{{.CLI_CONNECTION_NAME}}"
+      # `snow dcm list` with no scope looks in the connection's default database
+      # and schema, which is not where these projects live, so it reports
+      # "No data". Query the home schema explicitly instead.
+      - >-
+        snow sql
+        --connection "{{.CLI_CONNECTION_NAME}}"
+        --query "SHOW DCM PROJECTS IN SCHEMA dcm_projects.dbt_demo;"
 
   stage-dbt-project:
     desc: Stages a clean copy of the dbt project (excludes .venv, .git, target, logs) for deployment.

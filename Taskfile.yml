@@ -23,9 +23,19 @@ tasks:
     cmds:
       - task: snowflake-resources-up
 
-      # Must follow the DCM deploy: the clones land in dev_dbt_demo.raw, which
-      # DCM creates.
+      # Must follow the DCM deploy: the tables are declared in DCM and created
+      # empty, and this fills any that are empty.
       - task: seed-raw-source-tables
+
+      # A zero-copy clone uses CREATE OR REPLACE, which strips the table's DCM
+      # project tag. Re-deploying re-adopts those tables so that `task dcm-plan`
+      # reports no changes once demo-up finishes. Cheap: it is a few ALTERs that
+      # touch no data.
+      - task: snow-cli:dcm-deploy
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DCM_TARGET: DEV
+          DCM_ALIAS: readopt_after_seed
 
       - task: dbt:create-udf-concatenate-object-values
         vars:
@@ -77,11 +87,12 @@ tasks:
           DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
 
   seed-raw-source-tables:
-    desc: Zero-copy clones the 9 RAW source tables the staging models read from.
+    desc: Loads any RAW source table that is empty, by clone if the backup exists or from S3 if not.
     internal: true
     cmds:
-      # Data seeding, not a schema declaration, so this stays imperative: DCM has
-      # no DEFINE ... CLONE. DEV only.
+      # Data, not structure, so this stays imperative: DCM has no DEFINE ... CLONE
+      # and no COPY INTO. The table schemas themselves are declared in
+      # dcm/sources/definitions/raw_tables.sql. DEV only.
       - task: snow-cli:sort-and-process-sql-folder
         vars:
           SQL_SORT_PROCESS_DIR: sql/seed
