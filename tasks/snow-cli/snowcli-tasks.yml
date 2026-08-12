@@ -26,6 +26,22 @@ tasks:
     cmds:
       - snow sql --connection "{{.CLI_CONNECTION_NAME}}" --query "DROP SCHEMA IF EXISTS {{.SCHEMA_FQN}};"
 
+  create-pat:
+    desc: Mints a programmatic access token and exports it from the shell rc file.
+    internal: true
+    cmds:
+      # Wrapped in a script rather than inlined here because the token secret is
+      # returned exactly once, by the create statement itself, and has to be
+      # parsed out and written to the rc file without ever reaching a log or argv.
+      - >-
+        cmd/create-pat.sh
+        "{{.CLI_CONNECTION_NAME}}"
+        "{{.PAT_USER}}"
+        "{{.PAT_NAME}}"
+        "{{.PAT_ROLE_RESTRICTION}}"
+        "{{.PAT_DAYS_TO_EXPIRY}}"
+        "{{.SHELL_RC_FILE}}"
+
   # -----------------------------------------------------------------------
   # DCM (Database Change Management)
   #

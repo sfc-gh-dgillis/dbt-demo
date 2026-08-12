@@ -6,5 +6,4 @@ tasks:
     desc: Validates that Snowflake CLI is installed.
     internal: true
     cmds:
-      - chmod +x ./tasks/validate-prerequisites/cmd/validate-snowcli.sh
       - ./tasks/validate-prerequisites/cmd/validate-snowcli.sh

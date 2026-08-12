@@ -17,7 +17,6 @@ tasks:
     vars:
       DBT_BUILD_DIR: '{{.DBT_BUILD_DIR | default "../../../.build/dbt"}}'
     cmds:
-      - chmod +x cmd/stage-dbt-project.sh
       - cmd/stage-dbt-project.sh "{{.DBT_BUILD_DIR}}"
 
   deploy-dbt-project:
