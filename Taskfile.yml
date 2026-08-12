@@ -239,3 +239,38 @@ tasks:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
           DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
           DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
+
+  # -----------------------------------------------------------------------
+  # Local dbt authentication
+  #
+  # dbt Projects on Snowflake needs no stored credentials: EXECUTE DBT PROJECT
+  # runs under the session that issued it. Running dbt LOCALLY does, and the
+  # dev-pat-auth target in ~/.dbt/profiles.yml reads its password from
+  # DBT_ENV_SECRET_PAT.
+  # -----------------------------------------------------------------------
+
+  pat-create:
+    desc: Mints the dev_dbt_demo_pat token and exports it as DBT_ENV_SECRET_PAT in ~/.zshrc.
+    cmds:
+      - task: validate-prerequisites:snowcli
+      # Defaults live here rather than in .env/demo.env because that file is
+      # gitignored, so a fresh clone would have nothing to read. Override any of
+      # them per run, e.g. `PAT_DAYS_TO_EXPIRY=30 task pat-create`.
+      #
+      # The role restriction is mandatory (tastyb is a SERVICE user) and must name
+      # a role tastyb already holds, which is driven by admin_users in
+      # tasks/snow-cli/dcm/manifest.yml. Pinning a PAT to a role that later gets
+      # dropped silently breaks it: SHOW USER PROGRAMMATIC ACCESS TOKENS then
+      # reports role_restriction as "<dropped>".
+      #
+      # 90 days is well inside the account authentication policy's
+      # MAX_EXPIRY_IN_DAYS of 365.
+      - task: snow-cli:create-pat
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          PAT_USER: '{{.PAT_USER | default "tastyb"}}'
+          PAT_NAME: '{{.PAT_NAME | default "dev_dbt_demo_pat"}}'
+          PAT_ROLE_RESTRICTION: '{{.PAT_ROLE_RESTRICTION | default "dev_dbt_demo_data_engineer"}}'
+          PAT_DAYS_TO_EXPIRY: '{{.PAT_DAYS_TO_EXPIRY | default "90"}}'
+          # Empty means the script falls back to $HOME/.zshrc.
+          SHELL_RC_FILE: '{{.SHELL_RC_FILE | default ""}}'
