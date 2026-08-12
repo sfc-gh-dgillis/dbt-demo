@@ -31,5 +31,6 @@ models:
   tasty_bytes:
     staging:
       +materialized: view
+      +schema: raw
     marts:
       +materialized: table
