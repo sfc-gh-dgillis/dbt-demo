@@ -13,10 +13,11 @@ set -euo pipefail
 # whitelist is deterministic in both directions.
 #
 # Usage: cmd/stage-dbt-project.sh [BUILD_DIR]
-# Run from tasks/snow-cli (the Taskfile include sets that working directory).
+# Run from tasks/snow-cli/dbt-projects (the Taskfile include sets that working
+# directory), which is why PROJECT_ROOT is three levels up.
 
-BUILD_DIR="${1:-../../.build/dbt}"
-PROJECT_ROOT="../.."
+BUILD_DIR="${1:-../../../.build/dbt}"
+PROJECT_ROOT="../../.."
 
 # Everything the dbt project object needs, and nothing else.
 FILES=(

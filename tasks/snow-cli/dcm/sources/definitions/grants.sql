@@ -24,7 +24,7 @@
 -- pre-seeded schema) silently received no grant at all.
 --
 -- Requires FEATURE_RBAC_INHERITED_GRANTS = 'ENABLED' on the account. This is a
--- public preview feature; sql/bootstrap/001-create_dcm_home.sql enables it, and
+-- public preview feature; sql/bootstrap/001-create_util_database.sql enables it, and
 -- deploys fail with a syntax error if it is off.
 --
 -- Not everything can be inherited. OWNERSHIP, account-only privileges such as

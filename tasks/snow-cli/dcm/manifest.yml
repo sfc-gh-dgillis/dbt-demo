@@ -11,8 +11,8 @@
 #   DEV  -> dev_dbt_demo,  dev_dbt_demo_*_wh,  dev_dbt_demo_{rw,ro,...}
 #   PROD -> prod_dbt_demo, prod_dbt_demo_*_wh, prod_dbt_demo_{rw,ro,...}
 #
-# The project object itself lives in dcm_projects.dbt_demo, which is created by
-# sql/bootstrap/001-create_dcm_home.sql. It cannot live in the databases this
+# The project object itself lives in util.dcm_project_archive, which is created by
+# sql/bootstrap/001-create_util_database.sql. It cannot live in the databases this
 # project manages: a DCM project may not define its own parent database or
 # schema.
 #
@@ -29,12 +29,12 @@ default_target: 'DEV'
 targets:
   DEV:
     account_identifier: SFSENORTHAMERICA-DGILLIS_AWS_USEAST1_V1
-    project_name: 'dcm_projects.dbt_demo.dbt_demo_dev'
+    project_name: 'util.dcm_project_archive.dbt_demo_dev'
     project_owner: ACCOUNTADMIN
     templating_config: 'DEV'
   PROD:
     account_identifier: SFSENORTHAMERICA-DGILLIS_AWS_USEAST1_V1
-    project_name: 'dcm_projects.dbt_demo.dbt_demo_prod'
+    project_name: 'util.dcm_project_archive.dbt_demo_prod'
     project_owner: ACCOUNTADMIN
     templating_config: 'PROD'
 

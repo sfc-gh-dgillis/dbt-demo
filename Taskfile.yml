@@ -5,6 +5,9 @@ includes:
   snow-cli:
     taskfile: ./tasks/snow-cli/snowcli-tasks.yml
     dir: ./tasks/snow-cli
+  dbt-projects:
+    taskfile: ./tasks/snow-cli/dbt-projects/dbt-projects-tasks.yml
+    dir: ./tasks/snow-cli/dbt-projects
   dbt:
     taskfile: ./tasks/dbt/dbt-tasks.yml
 
@@ -50,31 +53,25 @@ tasks:
           TARGET: dev-keypair-auth
           ARGS: '{database: dev_dbt_demo, schema: utilities}'
 
-      - task: dbt:test-udf-concatenate-object-values
-        vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          WAREHOUSE: dev_dbt_demo_xs_wh
-          DATABASE_NAME: dev_dbt_demo
-          SCHEMA_NAME: utilities
-
-  dcm-home-up:
-    desc: Creates the database and schema that hold the DCM project objects.
+  util-database-up:
+    desc: Creates the util database and the schemas that hold the DCM and dbt project objects.
     internal: true
     cmds:
       # The DCM project object needs a database and schema to live in, and a DCM
       # project cannot define its own parent. This is the only imperative setup
-      # left, and both plan and deploy require it.
+      # left, and both plan and deploy require it. The same script creates
+      # util.dbt_project_archive, which the dbt-project-* tasks deploy into.
       - task: snow-cli:sort-and-process-sql-folder
         vars:
           SQL_SORT_PROCESS_DIR: sql/bootstrap
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
 
   snowflake-resources-up:
-    desc: Validates Snowflake CLI, bootstraps the DCM project home, then reconciles all infrastructure.
+    desc: Validates Snowflake CLI, bootstraps the util database, then reconciles all infrastructure.
     internal: true
     cmds:
       - task: validate-prerequisites:snowcli
-      - task: dcm-home-up
+      - task: util-database-up
       - task: snow-cli:dcm-create
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
@@ -104,7 +101,7 @@ tasks:
       Use `DCM_TARGET=PROD task dcm-plan` to preview prod.
     cmds:
       - task: validate-prerequisites:snowcli
-      - task: dcm-home-up
+      - task: util-database-up
       - task: snow-cli:dcm-create
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
@@ -155,8 +152,11 @@ tasks:
     desc: Drops the schema holding the dbt demo's DCM project objects.
     internal: true
     cmds:
-      # Schema only, never the database. dcm_projects is shared and holds
-      # unrelated DCM projects in other schemas.
+      # Schema only, never the database. util is shared and predates this demo.
+      #
+      # util.dbt_project_archive is deliberately left alone: the DBT PROJECT
+      # object there accumulates a version history across deploys, and there is
+      # no reason to lose it because the databases it builds into were rebuilt.
       #
       # This removes the registrations for BOTH targets. If PROD was ever
       # deployed, run `task demo-teardown-prod` first or its objects are orphaned
@@ -164,7 +164,7 @@ tasks:
       - task: snow-cli:drop-schema-if-exists
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          SCHEMA_FQN: dcm_projects.dbt_demo
+          SCHEMA_FQN: util.dcm_project_archive
 
   # -----------------------------------------------------------------------
   # dbt Projects on Snowflake
@@ -178,7 +178,7 @@ tasks:
     desc: Stages and deploys the dbt project object to Snowflake (adds a new version if it exists).
     cmds:
       - task: validate-prerequisites:snowcli
-      - task: snow-cli:deploy-dbt-project
+      - task: dbt-projects:deploy-dbt-project
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
           DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
@@ -188,7 +188,7 @@ tasks:
   dbt-project-compile:
     desc: Compiles the deployed project object. Cheap way to validate profiles.yml, env.yml, and refs before building.
     cmds:
-      - task: snow-cli:execute-dbt-project
+      - task: dbt-projects:execute-dbt-project
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
           DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
@@ -201,7 +201,7 @@ tasks:
   dbt-project-run-marts:
     desc: Builds the models/marts dimensions and their upstream staging views, with tests.
     cmds:
-      - task: snow-cli:execute-dbt-project
+      - task: dbt-projects:execute-dbt-project
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
           DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
@@ -217,7 +217,7 @@ tasks:
   dbt-project-run-facts:
     desc: Builds f_order (248M rows) and f_order_line (673M rows) on a larger warehouse. Expensive, opt-in.
     cmds:
-      - task: snow-cli:execute-dbt-project
+      - task: dbt-projects:execute-dbt-project
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
           DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
@@ -234,7 +234,7 @@ tasks:
   dbt-project-list:
     desc: Lists the deployed dbt project objects.
     cmds:
-      - task: snow-cli:describe-dbt-project
+      - task: dbt-projects:describe-dbt-project
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
           DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
