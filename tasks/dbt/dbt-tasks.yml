@@ -38,6 +38,11 @@ tasks:
     cmds:
       - dbt build --target dev-tastyb --project-dir . --select +d_country --profiles-dir ~/.dbt
 
+  build-dimensions:
+    desc: Builds all marts locally
+    cmds:
+      - dbt build --target dev-tastyb --project-dir . --profiles-dir ~/.dbt --select +path:models/marts --exclude f_order f_order_line
+
   docs-generate-and-serve:
     desc: Generates and serves dbt docs locally.
     internal: true
