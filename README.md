@@ -264,7 +264,7 @@ dbt supports multiple [targets](https://docs.getdbt.com/docs/core/connect-data-p
 
 ###### Add targets
 
-Below are two example targets that could be in your `profiles.yml` file. Configure appropriately for your environment (use your account, user, etc.). This gives examples of two different Snowflake authentication methods - key pair authentication and **P**rogrammatic **A**ccess **T**oken (PAT) authentication. You can use either or both methods. If using PAT authentication, ensure you have created a PAT in Snowflake and stored it in an environment variable called `DBT_ENV_SECRET_PAT`.
+Below are two example targets that could be in your `profiles.yml` file. Configure appropriately for your environment (use your account, user, etc.). This gives examples of two different Snowflake authentication methods - key pair authentication and **P**rogrammatic **A**ccess **T**oken (PAT) authentication. You can use either or both methods. If using PAT authentication, run `task pat-create` to mint the token and export it as `DBT_ENV_SECRET_PAT` in your `~/.zshrc`. Re-run it whenever the token expires; it replaces both the token and the export in place.
 
 ```yaml
 default:
@@ -302,15 +302,18 @@ default:
       # snowflake account identifier
       account: sfsenorthamerica-dgillis_aws_useast1_v1
       #snowflake role
-      role: dbt_demo_data_engineer
+      # Must match the PAT's ROLE_RESTRICTION. A PAT is pinned to a single role,
+      # and secondary roles are never applied, so requesting any other role here
+      # fails.
+      role: dev_dbt_demo_data_engineer
 
       # User/password auth
       user: tastyb
       password: "{{ env_var('DBT_ENV_SECRET_PAT') }}"
 
-      database: dbt_demo
-      warehouse: dbt_demo_s_wh
-      schema: curated
+      database: dev_dbt_demo
+      warehouse: dev_dbt_demo_s_wh
+      schema: modeled
       threads: 8
       client_session_keep_alive: False
       query_tag: test_query_tag # optional, used for query tagging in Snowflake
