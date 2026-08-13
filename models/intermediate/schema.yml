@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: int_franchise_deduped
+    description: >
+      Franchise owners reduced to one row per franchise_id so d_franchise can key
+      a unique surrogate on it. Collapses exact duplicate rows and, for
+      franchisees present in more than one city, keeps the first city
+      alphabetically. See the model header for why this is lossy by design.
+    columns:
+      - name: franchise_id
+        description: Natural key identifier for the franchise. Unique in this model, unlike the raw source.
+        data_type: NUMBER
+        tests:
+          - unique
+          - not_null
+      - name: first_name
+        description: First name of the franchise owner.
+        data_type: VARCHAR
+      - name: last_name
+        description: Last name of the franchise owner.
+        data_type: VARCHAR
+      - name: city
+        description: City where the franchise owner is located. One city per franchise, chosen alphabetically.
+        data_type: VARCHAR
+      - name: country
+        description: Country where the franchise owner is located.
+        data_type: VARCHAR
+      - name: e_mail
+        description: Email address of the franchise owner.
+        data_type: VARCHAR
+      - name: phone_number
+        description: Phone number of the franchise owner.
+        data_type: VARCHAR
