@@ -20,6 +20,7 @@ This project's structure is modeled after dbt's [How we structure our dbt projec
       - [Virtual Environment dbt Installation](#virtual-environment-dbt-installation)
       - [Connection Profile Setup](#connection-profile-setup)
 - [Running dbt](#running-dbt)
+  - [Developer Loop](docs/dev-loop.md)
 - [dbt Code Generation](#dbt-code-generation)
   - [Generating Source YAML from the command line](#generating-source-yaml-from-the-command-line)
   - [Generating Staging Model for a source from the command line](#generating-staging-model-for-a-source-from-the-command-line)
@@ -385,7 +386,19 @@ From your project root. Use the `dbt debug` command to validate your connection
 
 ## Running dbt
 
-TODO - document running models, etc.
+The same models in this project are built in three different execution contexts:
+locally from your laptop, inside Snowflake as a `DBT PROJECT` object, and from CI
+against production. See **[docs/dev-loop.md](docs/dev-loop.md)** for the
+developer loop across all three.
+
+The quickest start, once your [connection profile](#connection-profile-setup) is
+in place:
+
+```shell
+task dbt-build-marts
+```
+
+Run `task --list` to see every available entrypoint.
 
 ## dbt Code Generation
 

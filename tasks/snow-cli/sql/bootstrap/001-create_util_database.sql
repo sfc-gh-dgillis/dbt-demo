@@ -42,6 +42,37 @@ CREATE SCHEMA IF NOT EXISTS util.dbt_project_archive
     COMMENT = 'DBT PROJECT objects for the dbt demo.';
 
 -- -----------------------------------------------------------------------
+-- Telemetry for dbt project runs
+--
+-- Every EXECUTE DBT PROJECT emits OpenTelemetry logs and trace spans, but only
+-- if these three levels are set. Without them the event table stays empty and a
+-- failed run leaves nothing behind to read.
+--
+-- Scoped to this schema and nothing else. The object parameter hierarchy is
+-- account -> database -> schema -> object, where each level OVERRIDES the one
+-- above rather than adding to it, so a schema-level setting is complete on its
+-- own; there is no database-level setting that it needs to supplement. That
+-- matters here because util is a SHARED database, and setting the levels on it
+-- would start emitting telemetry for unrelated schemas that other teams own.
+--
+-- These live here, imperatively, because DCM cannot manage the schema that
+-- holds its own project object, and this is the schema that holds the DBT
+-- PROJECT object. See the note at the top of this file.
+--
+-- Destination is the account's active event table (SNOWFLAKE.TELEMETRY.EVENTS
+-- unless overridden). Confirm with:
+--   SHOW PARAMETERS LIKE 'EVENT_TABLE' IN ACCOUNT;
+--
+-- Volume: TRACE_LEVEL = ALWAYS and METRIC_LEVEL = ALL are the most verbose
+-- settings available, which is what makes the demo worth looking at. They are
+-- also billed as storage in the event table. Lower TRACE_LEVEL to ON_EVENT if
+-- that becomes a concern.
+-- -----------------------------------------------------------------------
+ALTER SCHEMA util.dbt_project_archive SET LOG_LEVEL = 'INFO';
+ALTER SCHEMA util.dbt_project_archive SET TRACE_LEVEL = 'ALWAYS';
+ALTER SCHEMA util.dbt_project_archive SET METRIC_LEVEL = 'ALL';
+
+-- -----------------------------------------------------------------------
 -- Inherited grants (public preview)
 --
 -- dcm/sources/definitions/grants.sql expresses all data access with

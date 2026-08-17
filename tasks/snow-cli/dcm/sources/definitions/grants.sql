@@ -55,8 +55,8 @@
 -- as standard grants. DCM executes them on deploy but does not track them in
 -- project state, so they will not show as drift and survive a purge.
 -- -----------------------------------------------------------------------
-GRANT EXECUTE TASK ON ACCOUNT TO ROLE {{ env }}_dbt_demo_rw;
-GRANT EXECUTE MANAGED TASK ON ACCOUNT TO ROLE {{ env }}_dbt_demo_rw;
+GRANT EXECUTE TASK ON ACCOUNT TO ROLE {{ base }}_rw;
+GRANT EXECUTE MANAGED TASK ON ACCOUNT TO ROLE {{ base }}_rw;
 
 -- -----------------------------------------------------------------------
 -- Warehouse Usage Grants
@@ -65,7 +65,7 @@ GRANT EXECUTE MANAGED TASK ON ACCOUNT TO ROLE {{ env }}_dbt_demo_rw;
 -- inherited either.
 -- -----------------------------------------------------------------------
 {% for wh in warehouses %}
-GRANT USAGE ON WAREHOUSE {{ env }}_dbt_demo_{{ wh.suffix }}_wh TO ROLE {{ env }}_dbt_demo_rw;
+GRANT USAGE ON WAREHOUSE {{ base }}_{{ wh.suffix }}_wh TO ROLE {{ base }}_rw;
 {% endfor %}
 
 -- -----------------------------------------------------------------------
@@ -74,12 +74,26 @@ GRANT USAGE ON WAREHOUSE {{ env }}_dbt_demo_{{ wh.suffix }}_wh TO ROLE {{ env }}
 -- USAGE on the container itself is a grant ON the container, not a grant
 -- inherited BY objects inside it, so these remain standard grants.
 -- -----------------------------------------------------------------------
-GRANT USAGE ON DATABASE {{ env }}_dbt_demo TO ROLE {{ env }}_dbt_demo_ro;
-GRANT USAGE ON DATABASE {{ env }}_dbt_demo TO ROLE {{ env }}_dbt_demo_rw;
+GRANT USAGE ON DATABASE {{ base }} TO ROLE {{ base }}_ro;
+GRANT USAGE ON DATABASE {{ base }} TO ROLE {{ base }}_rw;
+
+-- CREATE SCHEMA is what makes per-developer isolation work. The `dev_user`
+-- environment in env.yml points DBT_CURRENT_SCHEMA at a schema derived from
+-- CURRENT_USER(), and dbt issues `create schema if not exists` for it on the
+-- first run. Without this privilege that run fails, and the schemas below are
+-- the only ones a developer could ever build into.
+--
+-- Deliberately not declared as DEFINE SCHEMA per developer: that would mean
+-- editing manifest.yml and redeploying for every new engineer. Granting the
+-- privilege once lets the set of developer schemas grow on its own.
+--
+-- The creating role owns what it creates, so a developer schema needs no
+-- further grants for its owner to build in it.
+GRANT CREATE SCHEMA ON DATABASE {{ base }} TO ROLE {{ base }}_rw;
 
 {% for schema in schemas %}
-GRANT USAGE ON SCHEMA {{ env }}_dbt_demo.{{ schema.name }} TO ROLE {{ env }}_dbt_demo_ro;
-GRANT USAGE ON SCHEMA {{ env }}_dbt_demo.{{ schema.name }} TO ROLE {{ env }}_dbt_demo_rw;
+GRANT USAGE ON SCHEMA {{ base }}.{{ schema.name }} TO ROLE {{ base }}_ro;
+GRANT USAGE ON SCHEMA {{ base }}.{{ schema.name }} TO ROLE {{ base }}_rw;
 {% endfor %}
 
 -- -----------------------------------------------------------------------
@@ -90,18 +104,18 @@ GRANT USAGE ON SCHEMA {{ env }}_dbt_demo.{{ schema.name }} TO ROLE {{ env }}_dbt
 -- future objects.
 -- -----------------------------------------------------------------------
 {% for schema in schemas %}
-GRANT INHERITED SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {{ env }}_dbt_demo.{{ schema.name }} TO ROLE {{ env }}_dbt_demo_rw;
-GRANT INHERITED SELECT ON ALL VIEWS IN SCHEMA {{ env }}_dbt_demo.{{ schema.name }} TO ROLE {{ env }}_dbt_demo_rw;
+GRANT INHERITED SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {{ base }}.{{ schema.name }} TO ROLE {{ base }}_rw;
+GRANT INHERITED SELECT ON ALL VIEWS IN SCHEMA {{ base }}.{{ schema.name }} TO ROLE {{ base }}_rw;
 {% endfor %}
 
-GRANT INHERITED USAGE ON ALL STAGES IN SCHEMA {{ env }}_dbt_demo.raw TO ROLE {{ env }}_dbt_demo_rw;
-GRANT INHERITED USAGE ON ALL FUNCTIONS IN SCHEMA {{ env }}_dbt_demo.utilities TO ROLE {{ env }}_dbt_demo_rw;
+GRANT INHERITED USAGE ON ALL STAGES IN SCHEMA {{ base }}.raw TO ROLE {{ base }}_rw;
+GRANT INHERITED USAGE ON ALL FUNCTIONS IN SCHEMA {{ base }}.utilities TO ROLE {{ base }}_rw;
 
 -- Collapses the old pair of `OPERATE ON ALL TASKS` plus
 -- `OPERATE ON FUTURE TASKS` into one statement. The ON ALL half was always a
 -- no-op on a fresh deploy: it resolved against tasks existing at that moment,
 -- of which there were none, and vanished from the changeset.
-GRANT INHERITED OPERATE ON ALL TASKS IN DATABASE {{ env }}_dbt_demo TO ROLE {{ env }}_dbt_demo_rw;
+GRANT INHERITED OPERATE ON ALL TASKS IN DATABASE {{ base }} TO ROLE {{ base }}_rw;
 
 -- -----------------------------------------------------------------------
 -- Inherited Data Access Grants: Read Only
@@ -110,12 +124,12 @@ GRANT INHERITED OPERATE ON ALL TASKS IN DATABASE {{ env }}_dbt_demo TO ROLE {{ e
 -- original grants: raw and curated views are implementation detail.
 -- -----------------------------------------------------------------------
 {% for schema in schemas %}
-GRANT INHERITED SELECT ON ALL TABLES IN SCHEMA {{ env }}_dbt_demo.{{ schema.name }} TO ROLE {{ env }}_dbt_demo_ro;
+GRANT INHERITED SELECT ON ALL TABLES IN SCHEMA {{ base }}.{{ schema.name }} TO ROLE {{ base }}_ro;
 {% endfor %}
 
-GRANT INHERITED SELECT ON ALL VIEWS IN SCHEMA {{ env }}_dbt_demo.modeled TO ROLE {{ env }}_dbt_demo_ro;
-GRANT INHERITED SELECT ON ALL VIEWS IN SCHEMA {{ env }}_dbt_demo.utilities TO ROLE {{ env }}_dbt_demo_ro;
-GRANT INHERITED USAGE ON ALL FUNCTIONS IN SCHEMA {{ env }}_dbt_demo.utilities TO ROLE {{ env }}_dbt_demo_ro;
+GRANT INHERITED SELECT ON ALL VIEWS IN SCHEMA {{ base }}.modeled TO ROLE {{ base }}_ro;
+GRANT INHERITED SELECT ON ALL VIEWS IN SCHEMA {{ base }}.utilities TO ROLE {{ base }}_ro;
+GRANT INHERITED USAGE ON ALL FUNCTIONS IN SCHEMA {{ base }}.utilities TO ROLE {{ base }}_ro;
 
 -- -----------------------------------------------------------------------
 -- Schema DDL Privileges
@@ -127,26 +141,26 @@ GRANT INHERITED USAGE ON ALL FUNCTIONS IN SCHEMA {{ env }}_dbt_demo.utilities TO
 -- -----------------------------------------------------------------------
 
 -- RAW: the landing zone, so it gets the full ingestion surface.
-GRANT CREATE FILE FORMAT ON SCHEMA {{ env }}_dbt_demo.raw TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE TABLE ON SCHEMA {{ env }}_dbt_demo.raw TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE VIEW ON SCHEMA {{ env }}_dbt_demo.raw TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE STAGE ON SCHEMA {{ env }}_dbt_demo.raw TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE PIPE ON SCHEMA {{ env }}_dbt_demo.raw TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE STREAM ON SCHEMA {{ env }}_dbt_demo.raw TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE EXTERNAL TABLE ON SCHEMA {{ env }}_dbt_demo.raw TO ROLE {{ env }}_dbt_demo_rw;
+GRANT CREATE FILE FORMAT ON SCHEMA {{ base }}.raw TO ROLE {{ base }}_rw;
+GRANT CREATE TABLE ON SCHEMA {{ base }}.raw TO ROLE {{ base }}_rw;
+GRANT CREATE VIEW ON SCHEMA {{ base }}.raw TO ROLE {{ base }}_rw;
+GRANT CREATE STAGE ON SCHEMA {{ base }}.raw TO ROLE {{ base }}_rw;
+GRANT CREATE PIPE ON SCHEMA {{ base }}.raw TO ROLE {{ base }}_rw;
+GRANT CREATE STREAM ON SCHEMA {{ base }}.raw TO ROLE {{ base }}_rw;
+GRANT CREATE EXTERNAL TABLE ON SCHEMA {{ base }}.raw TO ROLE {{ base }}_rw;
 
 -- CURATED: tables, views, and the scheduled work that maintains them.
-GRANT CREATE TABLE ON SCHEMA {{ env }}_dbt_demo.curated TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE VIEW ON SCHEMA {{ env }}_dbt_demo.curated TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE TASK ON SCHEMA {{ env }}_dbt_demo.curated TO ROLE {{ env }}_dbt_demo_rw;
+GRANT CREATE TABLE ON SCHEMA {{ base }}.curated TO ROLE {{ base }}_rw;
+GRANT CREATE VIEW ON SCHEMA {{ base }}.curated TO ROLE {{ base }}_rw;
+GRANT CREATE TASK ON SCHEMA {{ base }}.curated TO ROLE {{ base }}_rw;
 
 -- MODELED: where the dbt marts land.
-GRANT CREATE TABLE ON SCHEMA {{ env }}_dbt_demo.modeled TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE VIEW ON SCHEMA {{ env }}_dbt_demo.modeled TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE DYNAMIC TABLE ON SCHEMA {{ env }}_dbt_demo.modeled TO ROLE {{ env }}_dbt_demo_rw;
+GRANT CREATE TABLE ON SCHEMA {{ base }}.modeled TO ROLE {{ base }}_rw;
+GRANT CREATE VIEW ON SCHEMA {{ base }}.modeled TO ROLE {{ base }}_rw;
+GRANT CREATE DYNAMIC TABLE ON SCHEMA {{ base }}.modeled TO ROLE {{ base }}_rw;
 
 -- UTILITIES: shared UDFs, so it is the only schema granted CREATE FUNCTION.
-GRANT CREATE TABLE ON SCHEMA {{ env }}_dbt_demo.utilities TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE VIEW ON SCHEMA {{ env }}_dbt_demo.utilities TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE DYNAMIC TABLE ON SCHEMA {{ env }}_dbt_demo.utilities TO ROLE {{ env }}_dbt_demo_rw;
-GRANT CREATE FUNCTION ON SCHEMA {{ env }}_dbt_demo.utilities TO ROLE {{ env }}_dbt_demo_rw;
+GRANT CREATE TABLE ON SCHEMA {{ base }}.utilities TO ROLE {{ base }}_rw;
+GRANT CREATE VIEW ON SCHEMA {{ base }}.utilities TO ROLE {{ base }}_rw;
+GRANT CREATE DYNAMIC TABLE ON SCHEMA {{ base }}.utilities TO ROLE {{ base }}_rw;
+GRANT CREATE FUNCTION ON SCHEMA {{ base }}.utilities TO ROLE {{ base }}_rw;

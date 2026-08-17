@@ -49,9 +49,38 @@ tasks:
   # and grants) is declared in dcm/sources/definitions and reconciled by DCM.
   # These replace the old imperative sql/init and sql/teardown scripts.
   #
+  # Every command below pins --role ACCOUNTADMIN rather than inheriting whatever
+  # role the connection happens to default to. DCM models each managed object as
+  # an OWNERSHIP grant to the executing role, so the role is not incidental: it
+  # decides who owns the database, warehouses, and roles that get created. A run
+  # under a different role would either fail for lack of privilege or, worse,
+  # succeed and leave objects owned by the wrong role, which then shows up later
+  # as an ALTER in the plan or as an "Insufficient privileges ... must have
+  # OWNERSHIP" error. It also matches project_owner: ACCOUNTADMIN in the manifest.
+  #
+  # The bootstrap SQL does not need this: sql/bootstrap/001-create_util_database.sql
+  # already opens with `USE ROLE accountadmin`.
+  #
   # DCM_TARGET selects a target from dcm/manifest.yml, which bundles the project
   # identifier with its templating configuration. DEV manages dev_dbt_demo and
   # the dev_dbt_demo_* warehouses and roles; PROD manages the prod equivalents.
+  #
+  # Two optional overrides support the DBT_PDB per-developer sandbox target, whose
+  # object names are not known until run time. Both default to empty, so the
+  # DEV and PROD command lines are unchanged:
+  #
+  #   DCM_IDENTIFIER  a fully qualified project object name, passed positionally.
+  #                   It takes precedence over the target's project_name, which is
+  #                   how each developer's sandbox gets its own project
+  #                   registration without a target per person.
+  #
+  #   DCM_VARIABLES   extra flags for the templating context, e.g.
+  #                   -D "base='dbt_pdb_dgillis'". Runtime --variable is the
+  #                   highest tier of DCM's variable resolution, overriding both
+  #                   templating.defaults and the target's configuration.
+  #
+  # Note only plan and deploy accept --variable. create, purge, and drop do not,
+  # so they take the identifier alone.
   # -----------------------------------------------------------------------
 
   dcm-create:
@@ -60,12 +89,14 @@ tasks:
     vars:
       DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
       DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
     cmds:
       # Both plan and deploy operate on a registered project object, and neither
       # creates one. --if-not-exists keeps this idempotent across repeat runs.
       - >-
-        snow dcm create
+        snow dcm create {{.DCM_IDENTIFIER}}
         --connection "{{.CLI_CONNECTION_NAME}}"
+        --role ACCOUNTADMIN
         --from "{{.DCM_PROJECT_DIR}}"
         --target "{{.DCM_TARGET}}"
         --if-not-exists
@@ -76,16 +107,20 @@ tasks:
     vars:
       DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
       DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
+      DCM_VARIABLES: '{{.DCM_VARIABLES | default ""}}'
     cmds:
       # --save-output writes out/plan_result.json. Grants do not appear in the
       # printed summary because DCM models them as a nested property of the
       # grantee role, so that file is the only way to review grant changes.
       - >-
-        snow dcm plan
+        snow dcm plan {{.DCM_IDENTIFIER}}
         --connection "{{.CLI_CONNECTION_NAME}}"
+        --role ACCOUNTADMIN
         --from "{{.DCM_PROJECT_DIR}}"
         --target "{{.DCM_TARGET}}"
         --save-output
+        {{.DCM_VARIABLES}}
 
   dcm-deploy:
     desc: Reconciles Snowflake with the DCM definitions for a target.
@@ -94,6 +129,8 @@ tasks:
       DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
       DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
       DCM_ALIAS: '{{.DCM_ALIAS | default "demo_up"}}'
+      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
+      DCM_VARIABLES: '{{.DCM_VARIABLES | default ""}}'
     cmds:
       # --alias tags the deployment so `SHOW DEPLOYMENTS IN DCM PROJECT` reads as
       # a history rather than a list of anonymous runs.
@@ -102,11 +139,13 @@ tasks:
       # "There is already a version exists with alias <x>", which would break
       # every demo-up after the first. The timestamp suffix keeps them unique.
       - >-
-        snow dcm deploy
+        snow dcm deploy {{.DCM_IDENTIFIER}}
         --connection "{{.CLI_CONNECTION_NAME}}"
+        --role ACCOUNTADMIN
         --from "{{.DCM_PROJECT_DIR}}"
         --target "{{.DCM_TARGET}}"
         --alias "{{.DCM_ALIAS}}_$(date +%Y%m%d_%H%M%S)"
+        {{.DCM_VARIABLES}}
 
   dcm-purge:
     desc: Drops every Snowflake object managed by a DCM target. Irreversible.
@@ -114,13 +153,15 @@ tasks:
     vars:
       DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
       DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
     cmds:
       # Replaces sql/teardown. Because the object list is derived from the same
       # definitions the deploy used, teardown can no longer drift from init.
       # --force skips the interactive prompt; this deletes data.
       - >-
-        snow dcm purge
+        snow dcm purge {{.DCM_IDENTIFIER}}
         --connection "{{.CLI_CONNECTION_NAME}}"
+        --role ACCOUNTADMIN
         --from "{{.DCM_PROJECT_DIR}}"
         --target "{{.DCM_TARGET}}"
         --force
@@ -131,11 +172,13 @@ tasks:
     vars:
       DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
       DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
+      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
     cmds:
       # Metadata only, so always run dcm-purge first if the objects should go too.
       - >-
-        snow dcm drop
+        snow dcm drop {{.DCM_IDENTIFIER}}
         --connection "{{.CLI_CONNECTION_NAME}}"
+        --role ACCOUNTADMIN
         --from "{{.DCM_PROJECT_DIR}}"
         --target "{{.DCM_TARGET}}"
 

@@ -13,7 +13,7 @@
 -- afterwards, so it never shows up as drift.
 
 {% for wh in warehouses %}
-DEFINE WAREHOUSE {{ env }}_dbt_demo_{{ wh.suffix }}_wh
+DEFINE WAREHOUSE {{ base }}_{{ wh.suffix }}_wh
 WITH
     WAREHOUSE_SIZE = '{{ wh.size }}'
     AUTO_SUSPEND = 600

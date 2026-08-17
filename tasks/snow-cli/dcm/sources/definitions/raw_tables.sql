@@ -25,7 +25,7 @@
 -- tag. The next plan re-adopts it with a harmless
 -- `ALTER TABLE ... set PROJECT`; it is not a schema change and drops nothing.
 
-DEFINE TABLE {{ env }}_dbt_demo.raw.country (
+DEFINE TABLE {{ base }}.raw.country (
     COUNTRY_ID NUMBER(18,0),
     COUNTRY VARCHAR(16777216),
     ISO_CURRENCY VARCHAR(3),
@@ -35,7 +35,7 @@ DEFINE TABLE {{ env }}_dbt_demo.raw.country (
     CITY_POPULATION NUMBER(38,0)
 );
 
-DEFINE TABLE {{ env }}_dbt_demo.raw.franchise (
+DEFINE TABLE {{ base }}.raw.franchise (
     FRANCHISE_ID NUMBER(38,0),
     FIRST_NAME VARCHAR(16777216),
     LAST_NAME VARCHAR(16777216),
@@ -45,7 +45,7 @@ DEFINE TABLE {{ env }}_dbt_demo.raw.franchise (
     PHONE_NUMBER VARCHAR(16777216)
 );
 
-DEFINE TABLE {{ env }}_dbt_demo.raw.location (
+DEFINE TABLE {{ base }}.raw.location (
     LOCATION_ID NUMBER(19,0),
     PLACEKEY VARCHAR(16777216),
     LOCATION VARCHAR(16777216),
@@ -55,7 +55,7 @@ DEFINE TABLE {{ env }}_dbt_demo.raw.location (
     COUNTRY VARCHAR(16777216)
 );
 
-DEFINE TABLE {{ env }}_dbt_demo.raw.menu (
+DEFINE TABLE {{ base }}.raw.menu (
     MENU_ID NUMBER(19,0),
     MENU_TYPE_ID NUMBER(38,0),
     MENU_TYPE VARCHAR(16777216),
@@ -69,7 +69,7 @@ DEFINE TABLE {{ env }}_dbt_demo.raw.menu (
     MENU_ITEM_HEALTH_METRICS_OBJ VARIANT
 );
 
-DEFINE TABLE {{ env }}_dbt_demo.raw.truck (
+DEFINE TABLE {{ base }}.raw.truck (
     TRUCK_ID NUMBER(38,0),
     MENU_TYPE_ID NUMBER(38,0),
     PRIMARY_CITY VARCHAR(16777216),
@@ -87,7 +87,7 @@ DEFINE TABLE {{ env }}_dbt_demo.raw.truck (
     TRUCK_TYPE VARCHAR(100)
 );
 
-DEFINE TABLE {{ env }}_dbt_demo.raw.order_header (
+DEFINE TABLE {{ base }}.raw.order_header (
     ORDER_ID NUMBER(38,0),
     TRUCK_ID NUMBER(38,0),
     LOCATION_ID FLOAT,
@@ -106,7 +106,7 @@ DEFINE TABLE {{ env }}_dbt_demo.raw.order_header (
     ORDER_TOTAL NUMBER(38,4)
 );
 
-DEFINE TABLE {{ env }}_dbt_demo.raw.order_detail (
+DEFINE TABLE {{ base }}.raw.order_detail (
     ORDER_DETAIL_ID NUMBER(38,0),
     ORDER_ID NUMBER(38,0),
     MENU_ITEM_ID NUMBER(38,0),
@@ -118,7 +118,7 @@ DEFINE TABLE {{ env }}_dbt_demo.raw.order_detail (
     ORDER_ITEM_DISCOUNT_AMOUNT VARCHAR(16777216)
 );
 
-DEFINE TABLE {{ env }}_dbt_demo.raw.customer_loyalty (
+DEFINE TABLE {{ base }}.raw.customer_loyalty (
     CUSTOMER_ID NUMBER(38,0),
     FIRST_NAME VARCHAR(16777216),
     LAST_NAME VARCHAR(16777216),
@@ -137,7 +137,7 @@ DEFINE TABLE {{ env }}_dbt_demo.raw.customer_loyalty (
     LAST_UPDATE_TS TIMESTAMP_TZ(9)
 );
 
-DEFINE TABLE {{ env }}_dbt_demo.raw.core_poi_geometry (
+DEFINE TABLE {{ base }}.raw.core_poi_geometry (
     PLACEKEY VARCHAR(16777216),
     PARENT_PLACEKEY VARCHAR(16777216),
     SAFEGRAPH_BRAND_IDS VARCHAR(16777216),

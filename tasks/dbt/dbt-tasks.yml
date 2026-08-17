@@ -7,13 +7,27 @@ version: '3'
 # file, which intentionally has no account, user, or credentials, and fail to
 # connect.
 
+vars:
+  # The target to use from ~/.dbt/profiles.yml. Named rather than hardcoded
+  # because the target name is a property of each developer's own profile, not
+  # of this repo: the README's example profile calls the PAT target
+  # `dev-pat-auth`, so anyone who followed it verbatim would otherwise get
+  # "profile target not found" from every task below. Override per run:
+  #
+  #   DBT_TARGET=dev-pat-auth task dbt-build-marts
+  DBT_TARGET: '{{.DBT_TARGET | default "dev-tastyb"}}'
+
+  # dbt debug is the connection check, so it defaults to the key pair target
+  # instead: key pair auth has no expiry, while a PAT does, which makes it the
+  # better probe when the question is "can I reach Snowflake at all".
+  DBT_DEBUG_TARGET: '{{.DBT_DEBUG_TARGET | default "dev-keypair-auth"}}'
+
 tasks:
 
   debug:
     desc: Runs dbt debug against the local credentialed profile.
-    internal: true
     cmds:
-      - dbt debug --target dev-keypair-auth --project-dir . --profiles-dir ~/.dbt
+      - dbt debug --target "{{.DBT_DEBUG_TARGET}}" --project-dir . --profiles-dir ~/.dbt
 
   create-udf-concatenate-object-values:
     desc: Creates the udf_concatenate_object_values UDF via dbt run-operation.
@@ -31,24 +45,24 @@ tasks:
     desc: Builds every model locally.
     internal: true
     cmds:
-      - dbt build --target dev-tastyb --project-dir . --profiles-dir ~/.dbt
+      - dbt build --target "{{.DBT_TARGET}}" --project-dir . --profiles-dir ~/.dbt
 
   build-country-dimension:
     desc: Builds the d_country dimension locally.
     cmds:
-      - dbt build --target dev-tastyb --project-dir . --select +d_country --profiles-dir ~/.dbt
+      - dbt build --target "{{.DBT_TARGET}}" --project-dir . --select +d_country --profiles-dir ~/.dbt
 
   build-dimensions:
     desc: Builds all marts locally
     cmds:
-      - dbt build --target dev-tastyb --project-dir . --profiles-dir ~/.dbt --select +path:models/marts --exclude f_order f_order_line
+      - dbt build --target "{{.DBT_TARGET}}" --project-dir . --profiles-dir ~/.dbt --select +path:models/marts --exclude f_order f_order_line
 
   docs-generate-and-serve:
     desc: Generates and serves dbt docs locally.
     internal: true
     cmds:
-      - dbt docs generate --target dev-tastyb --project-dir . --profiles-dir ~/.dbt
-      - dbt docs serve --target dev-tastyb --project-dir . --profiles-dir ~/.dbt
+      - dbt docs generate --target "{{.DBT_TARGET}}" --project-dir . --profiles-dir ~/.dbt
+      - dbt docs serve --target "{{.DBT_TARGET}}" --project-dir . --profiles-dir ~/.dbt
 
 #  generate-base-model:
 #    cmds:
