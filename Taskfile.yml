@@ -18,67 +18,20 @@ dotenv: ['{{ .ENV_DIR }}/{{ .DOTENV_FILENAME | default "demo.env" }}']
 
 tasks:
 
-  demo-up:
-    desc: |
-      Usage: `task demo-up` if using the default demo.env file. Use `DOTENV_FILENAME=custom.env task demo-up`
-      if using a custom .env file (filename does not have to be custom.env, but must end with .env).
-
-    cmds:
-      - task: snowflake-resources-up
-
-      # Must follow the DCM deploy: the tables are declared in DCM and created
-      # empty, and this fills any that are empty.
-      - task: seed-raw-source-tables
-
-      # A zero-copy clone uses CREATE OR REPLACE, which strips the table's DCM
-      # project tag. Re-deploying re-adopts those tables so that `task dcm-plan`
-      # reports no changes once demo-up finishes. Cheap: it is a few ALTERs that
-      # touch no data.
-      - task: snow-cli:dcm-deploy
-        vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DCM_TARGET: DEV
-          DCM_ALIAS: readopt_after_seed
-
-      - task: dbt:create-udf-concatenate-object-values
-        vars:
-          TARGET: dev-keypair-auth
-          ARGS: '{database: dev_dbt_demo, schema: utilities}'
-
-      # udf_generate_surrogate_key depends on udf_concatenate_object_values and
-      # is called by every model in models/marts, so it must exist before any
-      # marts run.
-      - task: dbt:create-udf-generate-surrogate-key
-        vars:
-          TARGET: dev-keypair-auth
-          ARGS: '{database: dev_dbt_demo, schema: utilities}'
-
-  util-database-up:
-    desc: Creates the util database and the schemas that hold the DCM and dbt project objects.
-    internal: true
-    cmds:
-      # The DCM project object needs a database and schema to live in, and a DCM
-      # project cannot define its own parent. This is the only imperative setup
-      # left, and both plan and deploy require it. The same script creates
-      # util.dbt_project_archive, which the dbt-project-* tasks deploy into.
-      - task: snow-cli:sort-and-process-sql-folder
-        vars:
-          SQL_SORT_PROCESS_DIR: sql/bootstrap
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-
   snowflake-resources-up:
     desc: Validates Snowflake CLI, bootstraps the util database, then reconciles all infrastructure.
     internal: true
     cmds:
       - task: validate-prerequisites:snowcli
-      - task: util-database-up
+      - task: snow-cli:sort-and-process-sql-folder
+        vars:
+          SQL_SORT_PROCESS_DIR: sql/bootstrap
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
       - task: snow-cli:dcm-create
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
           DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
           DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
-      # Everything else (database, schemas, warehouses, roles, grants) is
-      # declared in tasks/snow-cli/dcm and converged by DCM.
       - task: snow-cli:dcm-deploy
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
@@ -88,35 +41,78 @@ tasks:
           DCM_ALIAS: '{{.DCM_ALIAS | default "demo_up"}}'
 
   seed-raw-source-tables:
-    desc: Loads any RAW source table that is empty, by clone if the backup exists or from S3 if not.
+    desc: Loads any RAW source table that is empty by COPY INTO from the public Tasty Bytes S3 bucket.
     internal: true
+    vars:
+      # The database to load into, which is also the DCM `base` for the target.
+      # dev_dbt_demo by default; demo-up-pdb overrides it with the sandbox name.
+      SEED_BASE: '{{.SEED_BASE | default "dev_dbt_demo"}}'
     cmds:
-      # Data, not structure, so this stays imperative: DCM has no DEFINE ... CLONE
-      # and no COPY INTO. The table schemas themselves are declared in
-      # dcm/sources/definitions/raw_tables.sql. DEV only.
+      # Data, not structure, so this stays imperative: DCM has no COPY INTO. The
+      # table schemas themselves are declared in
+      # dcm/sources/definitions/raw_tables.sql.
       - task: snow-cli:sort-and-process-sql-folder
         vars:
           SQL_SORT_PROCESS_DIR: sql/seed
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          SQL_VARIABLES: 'base={{.SEED_BASE}}'
 
-  dcm-plan:
-    desc: |
-      Previews the infrastructure changes DCM would apply, without applying them.
-      Use `DCM_TARGET=PROD task dcm-plan` to preview prod.
+  demo-up-pdb:
+    desc: Creates the DBT_PDB_USERNAME sandbox database, warehouses, and roles, then seeds the raw tables.
+    preconditions:
+      - sh: '[ -n "$DBT_PDB_USERNAME" ]'
+        msg: "DBT_PDB_USERNAME is not set. Add it to .env/demo.env, e.g. DBT_PDB_USERNAME=dgillis"
+      - sh: 'printf "%s" "$DBT_PDB_USERNAME" | grep -Eq "^[A-Za-z_][A-Za-z0-9_]*$"'
+        msg: "DBT_PDB_USERNAME must be letters, digits and underscores only, not starting with a digit."
     cmds:
-      - task: validate-prerequisites:snowcli
-      - task: util-database-up
-      - task: snow-cli:dcm-create
+      - task: snowflake-resources-up
         vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-          DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
-      - task: snow-cli:dcm-plan
+          DCM_TARGET: DBT_PDB
+          DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_pdb_$DBT_PDB_USERNAME'
+          # admin_users is overridden alongside base because the sandbox is named
+          # after its owner, so that person is exactly who should hold its data
+          # engineer role. The manifest ships DBT_PDB with admin_users: [] on
+          # purpose -- a checked-in name would grant one developer access to every
+          # other developer's sandbox -- so the grant has to come from the same
+          # runtime value that names the objects. Without it the sandbox roles
+          # exist but are assigned to nobody, and local dbt cannot reach the
+          # database at all.
+          DCM_VARIABLES: '-D "base=''dbt_pdb_$DBT_PDB_USERNAME''" -D "admin_users=[''$DBT_PDB_USERNAME'']"'
+          DCM_ALIAS: 'pdb_up'
+
+      - task: seed-raw-source-tables
         vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-          DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
-          DCM_VARIABLES: '{{.DCM_VARIABLES | default ""}}'
+          SEED_BASE: 'dbt_pdb_$DBT_PDB_USERNAME'
+
+      # The marts all call utilities.udf_generate_surrogate_key, so a sandbox
+      # without these two UDFs fails on the first model. demo-up-dev creates them
+      # for dev; this does the same for the sandbox, into the sandbox's own
+      # utilities schema.
+      - task: dbt:create-udf-concatenate-object-values
+        vars:
+          TARGET: pdb-keypair-auth
+          ARGS: '{database: dbt_pdb_$DBT_PDB_USERNAME, schema: utilities}'
+      - task: dbt:create-udf-generate-surrogate-key
+        vars:
+          TARGET: pdb-keypair-auth
+          ARGS: '{database: dbt_pdb_$DBT_PDB_USERNAME, schema: utilities}'
+
+  demo-up-dev:
+    desc: |
+      Usage: `task demo-up` if using the default demo.env file. Use `DOTENV_FILENAME=custom.env task demo-up`
+      if using a custom .env file (filename does not have to be custom.env, but must end with .env).
+
+    cmds:
+      - task: snowflake-resources-up
+      - task: seed-raw-source-tables
+      - task: dbt:create-udf-concatenate-object-values
+        vars:
+          TARGET: dev-keypair-auth
+          ARGS: '{database: dev_dbt_demo, schema: utilities}'
+      - task: dbt:create-udf-generate-surrogate-key
+        vars:
+          TARGET: dev-keypair-auth
+          ARGS: '{database: dev_dbt_demo, schema: utilities}'
 
   demo-up-prod:
     desc: Reconciles the prod_dbt_demo database, warehouses, and roles. No data seeding.
@@ -124,71 +120,6 @@ tasks:
       - task: snowflake-resources-up
         vars:
           DCM_TARGET: PROD
-
-  # -----------------------------------------------------------------------
-  # Personal sandbox (DCM target DBT_PDB)
-  #
-  # A private, full copy of the dev stack named after a developer:
-  # DBT_PDB_DGILLIS plus dbt_pdb_dgillis_*_wh and dbt_pdb_dgillis_{rw,ro,...}.
-  # Nothing here is shared, so it is safe to break and cheap to rebuild.
-  #
-  # This is a heavier form of isolation than the `dev_user` environment in
-  # env.yml. That gives you your own SCHEMA inside the shared dev_dbt_demo, which
-  # is the right tool for day-to-day model work; this gives you your own DATABASE,
-  # warehouses, and roles, which is what you want when the thing you are changing
-  # is the infrastructure itself -- grants, schema layout, warehouse sizing --
-  # rather than the models.
-  #
-  # The name comes from DBT_PDB_USERNAME, set in .env/demo.env alongside
-  # CLI_CONNECTION_NAME. It is deliberately explicit rather than derived from the
-  # session: the sandbox you want to operate on is not necessarily the one
-  # belonging to whoever the connection happens to authenticate as, and a value
-  # read from a file is visible, greppable, and reviewable in a way a query result
-  # is not.
-  #
-  # It is used in two places: the DCM project object name (so each sandbox has its
-  # own project registration and cannot drop anyone else's objects) and the `base`
-  # templating variable (which names the objects themselves).
-  #
-  # Every task here refuses to run if DBT_PDB_USERNAME is unset or is not usable
-  # in an unquoted Snowflake identifier. Both matter: unset would silently build
-  # objects called dbt_pdb_ and a project called dbt_demo_pdb_, and an illegal
-  # character would produce DDL that cannot compile.
-  # -----------------------------------------------------------------------
-
-  dcm-plan-pdb:
-    desc: Previews the changes DCM would apply to the DBT_PDB_USERNAME sandbox. Applies nothing.
-    preconditions:
-      - sh: '[ -n "$DBT_PDB_USERNAME" ]'
-        msg: "DBT_PDB_USERNAME is not set. Add it to .env/demo.env, e.g. DBT_PDB_USERNAME=dgillis"
-      - sh: 'printf "%s" "$DBT_PDB_USERNAME" | grep -Eq "^[A-Za-z_][A-Za-z0-9_]*$"'
-        msg: "DBT_PDB_USERNAME must be letters, digits and underscores only, not starting with a digit."
-    cmds:
-      - task: dcm-plan
-        vars:
-          DCM_TARGET: DBT_PDB
-          DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_pdb_$DBT_PDB_USERNAME'
-          DCM_VARIABLES: '-D "base=''dbt_pdb_$DBT_PDB_USERNAME''"'
-
-  demo-up-pdb:
-    desc: Creates the DBT_PDB_USERNAME sandbox database, warehouses, and roles. No data seeding.
-    preconditions:
-      - sh: '[ -n "$DBT_PDB_USERNAME" ]'
-        msg: "DBT_PDB_USERNAME is not set. Add it to .env/demo.env, e.g. DBT_PDB_USERNAME=dgillis"
-      - sh: 'printf "%s" "$DBT_PDB_USERNAME" | grep -Eq "^[A-Za-z_][A-Za-z0-9_]*$"'
-        msg: "DBT_PDB_USERNAME must be letters, digits and underscores only, not starting with a digit."
-    cmds:
-      # Deliberately does not seed. The seed script in sql/seed hardcodes
-      # dev_dbt_demo for its file format, stage, and all nine COPY INTO
-      # statements, so it cannot load a sandbox without being parameterised
-      # first. The 9 raw tables are created empty, exactly as demo-up-prod
-      # leaves them.
-      - task: snowflake-resources-up
-        vars:
-          DCM_TARGET: DBT_PDB
-          DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_pdb_$DBT_PDB_USERNAME'
-          DCM_VARIABLES: '-D "base=''dbt_pdb_$DBT_PDB_USERNAME''"'
-          DCM_ALIAS: 'pdb_up'
 
   demo-teardown-pdb:
     desc: Purges the DBT_PDB_USERNAME sandbox and unregisters its DCM project. Irreversible.
@@ -260,17 +191,6 @@ tasks:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
           SCHEMA_FQN: util.dcm_project_archive
 
-  # -----------------------------------------------------------------------
-  # Local dbt
-  #
-  # dbt runs on the laptop and connects out to Snowflake using a credentialed
-  # target from ~/.dbt/profiles.yml. Fastest feedback of the three execution
-  # contexts, and the only one that can run uncommitted code.
-  #
-  # See docs/dev-loop.md for how this stage relates to running the same models
-  # as a DBT PROJECT object inside Snowflake.
-  # -----------------------------------------------------------------------
-
   dbt-build-marts:
     desc: Builds the marts dimensions and their upstream models locally. Local counterpart of dbt-project-run-marts.
     cmds:
@@ -280,14 +200,6 @@ tasks:
       - task: dbt:build-dimensions
         vars:
           DBT_TARGET: '{{.DBT_TARGET | default "dev-tastyb"}}'
-
-  # -----------------------------------------------------------------------
-  # dbt Projects on Snowflake
-  #
-  # The project runs inside Snowflake as a DBT PROJECT object. Connection
-  # settings come from env.yml (resolved by Snowflake before each run) and are
-  # read by profiles.yml with env_var().
-  # -----------------------------------------------------------------------
 
   dbt-project-deploy:
     desc: Stages and deploys the dbt project object to Snowflake (adds a new version if it exists).
@@ -313,6 +225,22 @@ tasks:
           DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dev"}}'
           DBT_ARGS: 'compile --target dev'
 
+  dbt-project-run-country-dimension:
+    desc: Builds d_country and its upstream staging view on Snowflake. Counterpart of dbt:build-country-dimension.
+    cmds:
+      - task: dbt-projects:execute-dbt-project
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
+          DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
+          DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
+          DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dev_dbt_demo_s_wh"}}'
+          DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dev"}}'
+          # The narrowest useful build: 2 models, stg_pos__country and d_country.
+          # Same selection as dbt:build-country-dimension, and with ENVIRONMENT=dev
+          # the same two relations, so the local and remote paths are comparable.
+          DBT_ARGS: 'build --select +d_country --target dev'
+
   dbt-project-run-marts:
     desc: Builds the models/marts dimensions and their upstream staging views, with tests.
     cmds:
@@ -332,17 +260,6 @@ tasks:
   dbt-project-run-marts-dev-user:
     desc: Builds the marts into your OWN schema, named after your Snowflake user, instead of the shared modeled schema.
     cmds:
-      # Identical to dbt-project-run-marts except for the environment. The
-      # dev_user environment in env.yml resolves DBT_CURRENT_SCHEMA from
-      # CURRENT_USER() at run time, so two engineers running this concurrently
-      # write to different schemas and never overwrite each other's marts.
-      #
-      # Nothing here names a developer: the schema is derived, so this task is
-      # the same for everyone and needs no per-person configuration.
-      #
-      # Note the --target stays `dev`. The env.yml environment and the dbt
-      # target are independent axes; `dev_user` is an ENVIRONMENT, not a target,
-      # and there is no dev_user target in profiles.yml.
       - task: dbt-projects:execute-dbt-project
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
@@ -370,14 +287,19 @@ tasks:
           DBT_ENV_VARS: "'DBT_CURRENT_WH' = '{{.DBT_FACTS_WAREHOUSE | default \"dev_dbt_demo_xl_wh\"}}'"
           DBT_ARGS: 'run --select f_order f_order_line --target dev'
 
-  dbt-project-list:
-    desc: Lists the deployed dbt project objects.
+  pat-create:
+    desc: Mints the dev_dbt_demo_pat token and exports it as DBT_ENV_SECRET_PAT in ~/.zshrc.
     cmds:
-      - task: dbt-projects:describe-dbt-project
+      - task: validate-prerequisites:snowcli
+      - task: snow-cli:create-pat
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
-          DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
+          PAT_USER: '{{.PAT_USER | default "tastyb"}}'
+          PAT_NAME: '{{.PAT_NAME | default "dev_dbt_demo_pat"}}'
+          PAT_ROLE_RESTRICTION: '{{.PAT_ROLE_RESTRICTION | default "dev_dbt_demo_data_engineer"}}'
+          PAT_DAYS_TO_EXPIRY: '{{.PAT_DAYS_TO_EXPIRY | default "90"}}'
+          # Empty means the script falls back to $HOME/.zshrc.
+          SHELL_RC_FILE: '{{.SHELL_RC_FILE | default ""}}'
 
   # -----------------------------------------------------------------------
   # Observability
@@ -455,38 +377,3 @@ tasks:
           DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
           DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dev_dbt_demo_s_wh"}}'
           DBT_ARGS: 'build --select +path:models/marts --exclude f_order f_order_line --target dev'
-
-  # -----------------------------------------------------------------------
-  # Local dbt authentication
-  #
-  # dbt Projects on Snowflake needs no stored credentials: EXECUTE DBT PROJECT
-  # runs under the session that issued it. Running dbt LOCALLY does, and the
-  # dev-pat-auth target in ~/.dbt/profiles.yml reads its password from
-  # DBT_ENV_SECRET_PAT.
-  # -----------------------------------------------------------------------
-
-  pat-create:
-    desc: Mints the dev_dbt_demo_pat token and exports it as DBT_ENV_SECRET_PAT in ~/.zshrc.
-    cmds:
-      - task: validate-prerequisites:snowcli
-      # Defaults live here rather than in .env/demo.env because that file is
-      # gitignored, so a fresh clone would have nothing to read. Override any of
-      # them per run, e.g. `PAT_DAYS_TO_EXPIRY=30 task pat-create`.
-      #
-      # The role restriction is mandatory (tastyb is a SERVICE user) and must name
-      # a role tastyb already holds, which is driven by admin_users in
-      # tasks/snow-cli/dcm/manifest.yml. Pinning a PAT to a role that later gets
-      # dropped silently breaks it: SHOW USER PROGRAMMATIC ACCESS TOKENS then
-      # reports role_restriction as "<dropped>".
-      #
-      # 90 days is well inside the account authentication policy's
-      # MAX_EXPIRY_IN_DAYS of 365.
-      - task: snow-cli:create-pat
-        vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          PAT_USER: '{{.PAT_USER | default "tastyb"}}'
-          PAT_NAME: '{{.PAT_NAME | default "dev_dbt_demo_pat"}}'
-          PAT_ROLE_RESTRICTION: '{{.PAT_ROLE_RESTRICTION | default "dev_dbt_demo_data_engineer"}}'
-          PAT_DAYS_TO_EXPIRY: '{{.PAT_DAYS_TO_EXPIRY | default "90"}}'
-          # Empty means the script falls back to $HOME/.zshrc.
-          SHELL_RC_FILE: '{{.SHELL_RC_FILE | default ""}}'

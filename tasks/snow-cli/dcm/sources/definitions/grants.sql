@@ -164,3 +164,53 @@ GRANT CREATE TABLE ON SCHEMA {{ base }}.utilities TO ROLE {{ base }}_rw;
 GRANT CREATE VIEW ON SCHEMA {{ base }}.utilities TO ROLE {{ base }}_rw;
 GRANT CREATE DYNAMIC TABLE ON SCHEMA {{ base }}.utilities TO ROLE {{ base }}_rw;
 GRANT CREATE FUNCTION ON SCHEMA {{ base }}.utilities TO ROLE {{ base }}_rw;
+
+-- -----------------------------------------------------------------------
+-- Ownership
+--
+-- Without these, every schema and raw table stays owned by the project owner
+-- role (ACCOUNTADMIN, pinned on all five `snow dcm` commands), because DCM
+-- models each managed object as an OWNERSHIP grant to the role that executes the
+-- deploy. Transferring ownership to the access role means the environment can be
+-- administered without ACCOUNTADMIN -- which matters most for a DBT_PDB sandbox,
+-- where the whole point is that a developer owns their own stack.
+--
+-- OWNERSHIP cannot be inherited, so unlike the data access grants above these
+-- are standard grants. It also cannot be granted to a USER: Snowflake only
+-- transfers ownership from one role to another, so the grantee is the access role
+-- rather than the person.
+--
+-- Two constraints from the DCM documentation shape what is safe to write here:
+--
+--   1. Once a project-created role owns an entity, the project owner role no
+--      longer has direct OWNERSHIP of it and can be locked out of future
+--      deployments unless the new owner is inside the project owner's role
+--      hierarchy. That already holds here, via roles.sql:
+--
+--        {{ base }}_rw -> {{ base }}_data_engineer -> SYSADMIN -> ACCOUNTADMIN
+--
+--      so ACCOUNTADMIN keeps managing these objects by inheritance. Breaking that
+--      chain -- dropping the grant to SYSADMIN, say -- would strand them.
+--
+--   2. DCM does not support the COPY CURRENT GRANTS or REVOKE CURRENT GRANTS
+--      clauses, so a GRANT OWNERSHIP fails outright if the target object carries
+--      grants that this project does not declare. Every privilege on these
+--      objects is declared above, and the data access grants are INHERITED ones
+--      attached to the schema container rather than per-object grants, so there
+--      is nothing on a table to copy or revoke. Adding an out-of-band grant to
+--      any of these objects would start failing the plan.
+--
+-- Deliberately limited to the containers and the 9 declared source tables. The
+-- relations dbt builds in curated and modeled are left alone: dbt creates them as
+-- {{ base }}_data_engineer, which already inherits {{ base }}_rw, so it owns them
+-- by construction and DCM has no business reassigning them.
+-- -----------------------------------------------------------------------
+{% for schema in schemas %}
+GRANT OWNERSHIP ON SCHEMA {{ base }}.{{ schema.name }} TO ROLE {{ base }}_rw;
+{% endfor %}
+
+-- ON ALL rather than nine explicit statements: the table list lives in
+-- raw_tables.sql, and repeating it here would mean a table added there silently
+-- keeping ACCOUNTADMIN ownership. raw holds only the declared source tables --
+-- dbt's staging models are views -- so this cannot reach a dbt-built relation.
+GRANT OWNERSHIP ON ALL TABLES IN SCHEMA {{ base }}.raw TO ROLE {{ base }}_rw;

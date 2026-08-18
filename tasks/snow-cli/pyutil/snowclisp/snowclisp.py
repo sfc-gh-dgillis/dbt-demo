@@ -74,7 +74,8 @@ def get_sorted_sql_files(directory: str, pattern: str = r'^\d+-.*\.sql$') -> Tup
 def execute_sql_files_with_snowflake_cli(
     connection_name: str,
     sql_files: List[Path],
-    verbose: bool = True
+    verbose: bool = True,
+    variables: List[str] = None
 ) -> bool:
     """
     Execute SQL files using Snowflake CLI in a single command.
@@ -83,6 +84,9 @@ def execute_sql_files_with_snowflake_cli(
         connection_name: Snowflake CLI connection name
         sql_files: List of SQL file paths to execute (in order)
         verbose: Print execution details
+        variables: Optional KEY=value template variables, passed to snow sql as
+            -D KEY=value. The SQL files reference them as <% KEY %>. Used by the
+            raw seed so one script can target any environment's database.
         
     Returns:
         True if all files executed successfully, False otherwise
@@ -90,6 +94,8 @@ def execute_sql_files_with_snowflake_cli(
     if not sql_files:
         print("No SQL files to execute.")
         return True
+    
+    variables = variables or []
     
     try:
         # Build command with multiple -f flags
@@ -99,16 +105,25 @@ def execute_sql_files_with_snowflake_cli(
         for sql_file in sql_files:
             cmd.extend(['-f', str(sql_file)])
         
+        for variable in variables:
+            cmd.extend(['-D', variable])
+        
         if verbose:
             print(f"\n{'='*60}")
             print(f"Executing {len(sql_files)} SQL file(s) in order:")
             for i, sql_file in enumerate(sql_files, 1):
                 print(f"  {i}. {sql_file.name}")
+            if variables:
+                print(f"Template variables:")
+                for variable in variables:
+                    print(f"  {variable}")
             print(f"{'='*60}")
             print(f"Running command:")
             print(f"  snow sql -c {connection_name} \\")
             for sql_file in sql_files:
                 print(f"    -f {sql_file} \\")
+            for variable in variables:
+                print(f"    -D {variable} \\")
             print()
         
         result = subprocess.run(
@@ -156,16 +171,32 @@ def main():
     Main entry point for command-line execution.
     
     Usage:
-        python script.py <directory> <connection_name>
+        python script.py <directory> <connection_name> [KEY=value ...]
     """
     if len(sys.argv) < 3:
-        print("Usage: python script.py <directory> <connection_name>")
+        print("Usage: python script.py <directory> <connection_name> [KEY=value ...]")
         print("\nExample:")
         print("  python script.py ./tasks/sql my_snowflake_connection")
+        print("  python script.py ./tasks/sql my_snowflake_connection base=dev_dbt_demo")
         sys.exit(1)
     
     directory = sys.argv[1]
     connection_name = sys.argv[2]
+    
+    # Any remaining arguments are snow sql template variables. Validated here
+    # rather than passed through blindly: a typo like "base dev_dbt_demo" would
+    # otherwise reach snow sql as a malformed -D and fail with a much less
+    # obvious message, and an unresolved <% base %> would go on to build objects
+    # with a literal template string in their names.
+    variables = sys.argv[3:]
+    for variable in variables:
+        key, separator, value = variable.partition('=')
+        if not separator or not key.strip() or not value.strip():
+            print(
+                f"ERROR: template variable '{variable}' is not in KEY=value form.",
+                file=sys.stderr
+            )
+            sys.exit(1)
     
     try:
         # Get sorted SQL files
@@ -192,7 +223,8 @@ def main():
         success = execute_sql_files_with_snowflake_cli(
             connection_name,
             sql_files,
-            verbose=True
+            verbose=True,
+            variables=variables
         )
         
         sys.exit(0 if success else 1)

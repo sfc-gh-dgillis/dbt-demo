@@ -37,10 +37,10 @@
 #
 # Usage:
 #   task dcm-plan                 preview the DEV changeset
-#   task demo-up                  bootstrap + deploy DEV + seed raw tables
+#   task demo-up-dev              bootstrap + deploy DEV + seed raw tables
 #   task demo-up-prod             deploy PROD
 #   task dcm-plan-pdb             preview YOUR personal sandbox changeset
-#   task demo-up-pdb              deploy YOUR personal sandbox (no data seeding)
+#   task demo-up-pdb              deploy YOUR personal sandbox + seed raw tables
 #   task demo-teardown            purge every managed object, drop the project
 #   task demo-teardown-pdb        purge YOUR personal sandbox only
 

@@ -1,26 +1,8 @@
 version: '3'
 
-# NOTE: every task here runs dbt LOCALLY, so each one passes
-# `--profiles-dir ~/.dbt`. The project root now contains a profiles.yml for dbt
-# Projects on Snowflake, and local dbt (1.9.4) searches the current working
-# directory BEFORE ~/.dbt/. Without the flag, local dbt would pick up the root
-# file, which intentionally has no account, user, or credentials, and fail to
-# connect.
-
 vars:
-  # The target to use from ~/.dbt/profiles.yml. Named rather than hardcoded
-  # because the target name is a property of each developer's own profile, not
-  # of this repo: the README's example profile calls the PAT target
-  # `dev-pat-auth`, so anyone who followed it verbatim would otherwise get
-  # "profile target not found" from every task below. Override per run:
-  #
-  #   DBT_TARGET=dev-pat-auth task dbt-build-marts
-  DBT_TARGET: '{{.DBT_TARGET | default "dev-tastyb"}}'
-
-  # dbt debug is the connection check, so it defaults to the key pair target
-  # instead: key pair auth has no expiry, while a PAT does, which makes it the
-  # better probe when the question is "can I reach Snowflake at all".
-  DBT_DEBUG_TARGET: '{{.DBT_DEBUG_TARGET | default "dev-keypair-auth"}}'
+  DBT_TARGET: '{{.DBT_TARGET}}'
+  DBT_DEBUG_TARGET: '{{.DBT_DEBUG_TARGET}}'
 
 tasks:
 
@@ -43,22 +25,34 @@ tasks:
 
   build-all:
     desc: Builds every model locally.
+    preconditions:
+      - sh: '[ -n "$DBT_TARGET" ]'
+        msg: "DBT_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_TARGET=dev-tastyb task dbt:build-country-dimension"
     internal: true
     cmds:
       - dbt build --target "{{.DBT_TARGET}}" --project-dir . --profiles-dir ~/.dbt
 
   build-country-dimension:
     desc: Builds the d_country dimension locally.
+    preconditions:
+      - sh: '[ -n "$DBT_TARGET" ]'
+        msg: "DBT_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_TARGET=dev-tastyb task dbt:build-country-dimension"
     cmds:
       - dbt build --target "{{.DBT_TARGET}}" --project-dir . --select +d_country --profiles-dir ~/.dbt
 
   build-dimensions:
     desc: Builds all marts locally
+    preconditions:
+      - sh: '[ -n "$DBT_TARGET" ]'
+        msg: "DBT_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_TARGET=dev-tastyb task dbt:build-country-dimension"
     cmds:
       - dbt build --target "{{.DBT_TARGET}}" --project-dir . --profiles-dir ~/.dbt --select +path:models/marts --exclude f_order f_order_line
 
   docs-generate-and-serve:
     desc: Generates and serves dbt docs locally.
+    preconditions:
+      - sh: '[ -n "$DBT_TARGET" ]'
+        msg: "DBT_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_TARGET=dev-tastyb task dbt:build-country-dimension"
     internal: true
     cmds:
       - dbt docs generate --target "{{.DBT_TARGET}}" --project-dir . --profiles-dir ~/.dbt
