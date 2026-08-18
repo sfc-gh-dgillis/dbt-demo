@@ -137,10 +137,15 @@ tasks:
           DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_pdb_$DBT_PDB_USERNAME'
 
   demo-teardown-dev:
-    desc: Tears down all Snowflake resources created for the dbt demo.
+    desc: Purges the dev_dbt_demo resources and unregisters the dev DCM project.
     cmds:
+      # DEV only. Dropping the shared util.dcm_project_archive schema used to be
+      # bundled in here, but that schema holds the project registration for EVERY
+      # target -- prod and every developer sandbox included -- so a task named
+      # after one environment was quietly account-wide. It orphaned a live sandbox
+      # exactly once, which was enough. It is now `task dcm-home-teardown`, run
+      # deliberately and last.
       - task: snowflake-resources-teardown
-      - task: dcm-home-teardown
 
   snowflake-resources-teardown:
     desc: Purges every object managed by the DCM target, then unregisters the project.
@@ -172,9 +177,17 @@ tasks:
         vars:
           DCM_TARGET: PROD
 
+  dcm-list:
+    desc: Lists the DCM projects still registered in the shared project home schema.
+    cmds:
+      # The safety check before dcm-home-teardown: anything listed here is still
+      # managed, and dropping the home schema would orphan it.
+      - task: snow-cli:dcm-list
+        vars:
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+
   dcm-home-teardown:
-    desc: Drops the schema holding the dbt demo's DCM project objects.
-    internal: true
+    desc: "ACCOUNT-WIDE: drops the shared schema holding EVERY target's DCM project registration."
     cmds:
       # Schema only, never the database. util is shared and predates this demo.
       #
@@ -182,10 +195,20 @@ tasks:
       # object there accumulates a version history across deploys, and there is
       # no reason to lose it because the databases it builds into were rebuilt.
       #
-      # This removes the registrations for ALL THREE targets, including every
-      # developer's personal sandbox. If PROD or any sandbox was ever deployed,
-      # run `task demo-teardown-prod` / `task demo-teardown-pdb` first, or those
-      # objects are orphaned with nothing left to manage them.
+      # Its own entrypoint rather than the tail of demo-teardown-dev, because the
+      # blast radius is not one environment. This removes the registrations for
+      # ALL THREE targets, including every developer's personal sandbox. Anything
+      # still deployed is left with nothing managing it: the database, warehouses
+      # and roles survive, but no project knows about them, so they can no longer
+      # be planned, deployed or purged.
+      #
+      # Run `task demo-teardown-dev` / `demo-teardown-prod` / `demo-teardown-pdb`
+      # for everything that was ever deployed FIRST, then this. `task dcm-list`
+      # shows what is still registered.
+      #
+      # If this is run too early, UNDROP SCHEMA util.dcm_project_archive restores
+      # the registrations and their deployment history -- but only inside the
+      # database's Time Travel window, which is 1 day.
       - task: snow-cli:drop-schema-if-exists
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME

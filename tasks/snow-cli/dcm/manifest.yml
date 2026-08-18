@@ -43,6 +43,8 @@
 #   task demo-up-pdb              deploy YOUR personal sandbox + seed raw tables
 #   task demo-teardown-dev        purge every managed object, drop the project
 #   task demo-teardown-pdb        purge YOUR personal sandbox only
+#   task dcm-list                 show which projects are still registered
+#   task dcm-home-teardown        ACCOUNT-WIDE: drop the shared project home schema
 
 manifest_version: 2
 type: DCM_PROJECT
