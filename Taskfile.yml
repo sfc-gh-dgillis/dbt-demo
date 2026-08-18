@@ -312,17 +312,35 @@ tasks:
 
   pat-create:
     desc: Mints the dev_dbt_demo_pat token and exports it as DBT_ENV_SECRET_PAT in ~/.zshrc.
+    vars:
+      # Resolved once here so the note below can interpolate it without escaping
+      # quotes inside a YAML block scalar, which the template lexer rejects.
+      RC_FILE_DISPLAY: '{{.SHELL_RC_FILE | default "~/.zshrc"}}'
     cmds:
       - task: validate-prerequisites:snowcli
       - task: snow-cli:create-pat
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
           PAT_USER: '{{.PAT_USER | default "tastyb"}}'
-          PAT_NAME: '{{.PAT_NAME | default "dev_dbt_demo_pat"}}'
-          PAT_ROLE_RESTRICTION: '{{.PAT_ROLE_RESTRICTION | default "dev_dbt_demo_data_engineer"}}'
+          PAT_NAME: '{{.PAT_NAME | default "dbt_pdb_tastyb_pat"}}'
+          PAT_ROLE_RESTRICTION: '{{.PAT_ROLE_RESTRICTION | default "dbt_pdb_tastyb_data_engineer"}}'
           PAT_DAYS_TO_EXPIRY: '{{.PAT_DAYS_TO_EXPIRY | default "90"}}'
           # Empty means the script falls back to $HOME/.zshrc.
           SHELL_RC_FILE: '{{.SHELL_RC_FILE | default ""}}'
+
+      # The new token was written to the rc file, but an env var already exported
+      # into THIS shell keeps its old value: a child process inherits the
+      # environment as it was, and nothing the task does can reach back up and
+      # change the parent. So a dbt run started from this same shell keeps sending
+      # the previous token, and once that one has been replaced server-side the
+      # failure is an authentication error, which reads like a bad password rather
+      # than a stale variable.
+      - cmd: |
+          printf '\n%s\n' "NOTE: this shell still holds the PREVIOUS DBT_ENV_SECRET_PAT."
+          printf '%s\n'   "      The new token is only in {{.RC_FILE_DISPLAY}}, so dbt runs started"
+          printf '%s\n'   "      from this shell keep using the old one and fail to authenticate."
+          printf '%s\n\n' "      Open a new shell, or: source {{.RC_FILE_DISPLAY}}"
+        silent: true
 
   # -----------------------------------------------------------------------
   # Observability
