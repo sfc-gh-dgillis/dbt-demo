@@ -41,7 +41,7 @@
 #   task demo-up-prod             deploy PROD
 #   task dcm-plan-pdb             preview YOUR personal sandbox changeset
 #   task demo-up-pdb              deploy YOUR personal sandbox + seed raw tables
-#   task demo-teardown            purge every managed object, drop the project
+#   task demo-teardown-dev        purge every managed object, drop the project
 #   task demo-teardown-pdb        purge YOUR personal sandbox only
 
 manifest_version: 2

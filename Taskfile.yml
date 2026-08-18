@@ -136,7 +136,7 @@ tasks:
           DCM_TARGET: DBT_PDB
           DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_pdb_$DBT_PDB_USERNAME'
 
-  demo-teardown:
+  demo-teardown-dev:
     desc: Tears down all Snowflake resources created for the dbt demo.
     cmds:
       - task: snowflake-resources-teardown

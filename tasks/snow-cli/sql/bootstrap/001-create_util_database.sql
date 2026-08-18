@@ -7,7 +7,7 @@ USE ROLE accountadmin;
 -- This is the one piece of setup that cannot be declarative. A DCM project may
 -- not define its own parent database or schema, so the container it lives in has
 -- to exist before `snow dcm create` runs. Keeping it outside the databases the
--- project manages also means `task demo-teardown` can purge every managed object
+-- project manages also means `task demo-teardown-dev` can purge every managed object
 -- without destroying the project that manages them. The DBT PROJECT object sits
 -- here for the same reason: it survives a teardown of dev_dbt_demo.
 --

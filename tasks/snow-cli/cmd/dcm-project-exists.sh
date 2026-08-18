@@ -11,7 +11,7 @@ set -euo pipefail
 #   authorized.
 #
 # That makes teardown non-idempotent, because purge runs before drop: the second
-# `task demo-teardown` dies on the first step even though there is nothing left
+# `task demo-teardown-dev` dies on the first step even though there is nothing left
 # to tear down. dcm-purge uses this as a Task `status:` check so it SKIPS instead
 # of failing when the project is already gone.
 #

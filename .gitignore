@@ -28,6 +28,11 @@ tasks.json
 *.so
 *.dylib
 
+# Python bytecode
+# Needs to come after the `!*/` unignore above, which would otherwise bring these
+# directories back in. Later rules win.
+__pycache__/
+
 # virtual environment
 .venv
 
