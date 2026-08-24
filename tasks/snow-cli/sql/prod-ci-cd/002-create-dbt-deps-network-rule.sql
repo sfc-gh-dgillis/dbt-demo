@@ -7,6 +7,7 @@ CREATE OR REPLACE NETWORK RULE dbt_deps_network_rule
   TYPE = HOST_PORT
   -- Minimal URL allowlist that is required for dbt deps
   VALUE_LIST = (
+    'hub.getdbt.com',
     'codeload.github.com'
     );
 
