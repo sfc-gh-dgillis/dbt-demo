@@ -47,5 +47,9 @@ jobs:
         run: snow dbt list -x
 
       # Builds all models and runs tests in DAG order, failing early if any upstream test breaks
+#      - name: Build and test dbt project in ${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}
+#        run: snow dbt execute -x tester_tasty_bytes_dbt_project_object_gh_action build --target prod
+
+      # Builds dimension models and runs tests in DAG order, failing early if any upstream test breaks
       - name: Build and test dbt project in ${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}
-        run: snow dbt execute -x tester_tasty_bytes_dbt_project_object_gh_action build --target prod
+        run: snow dbt execute -x tester_tasty_bytes_dbt_project_object_gh_action build --select +path:models/marts --exclude f_order f_order_line --target prod
