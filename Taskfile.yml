@@ -57,6 +57,29 @@ tasks:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
           SQL_VARIABLES: 'base={{.SEED_BASE}}'
 
+  grant-dbt-project-execution:
+    desc: Grants the sandbox's data engineer role the privileges to run the deployed dbt project object.
+    internal: true
+    vars:
+      # The base name whose _data_engineer role receives the grants.
+      GRANT_BASE: '{{.GRANT_BASE | default "dev_dbt_demo"}}'
+    cmds:
+      # Run as admin, not as the sandbox: these grant access to the shared util
+      # database, which the sandbox role has no authority over.
+      #
+      # Kept out of sql/bootstrap deliberately. bootstrap runs for DEV, PROD and
+      # DBT_PDB alike with no template variables, so a file needing <% base %>
+      # would leave an unresolved placeholder in a role name on the other paths.
+      - task: snow-cli:sort-and-process-sql-folder
+        vars:
+          SQL_SORT_PROCESS_DIR: sql/dbt-project-grants
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          SQL_VARIABLES: >-
+            base={{.GRANT_BASE}}
+            dbt_project_database=$DBT_PROJECT_DATABASE
+            dbt_project_schema=$DBT_PROJECT_SCHEMA
+            dbt_project_object_name=$DBT_PROJECT_OBJECT_NAME
+
   demo-up-pdb:
     desc: Creates the DBT_PDB_USERNAME sandbox database, warehouses, and roles, then seeds the raw tables.
     preconditions:
@@ -97,6 +120,14 @@ tasks:
           TARGET: pdb-keypair-auth
           ARGS: '{database: dbt_pdb_$DBT_PDB_USERNAME, schema: utilities}'
 
+      # Lets the sandbox role run the deployed DBT PROJECT object, which lives in
+      # the shared util database rather than in the sandbox. Without this the
+      # dbt-project-run-* tasks fail on the project object being invisible to the
+      # PAT connection's role.
+      - task: grant-dbt-project-execution
+        vars:
+          GRANT_BASE: 'dbt_pdb_$DBT_PDB_USERNAME'
+
   demo-up-dev:
     desc: |
       Usage: `task demo-up` if using the default demo.env file. Use `DOTENV_FILENAME=custom.env task demo-up`
@@ -115,11 +146,32 @@ tasks:
           ARGS: '{database: dev_dbt_demo, schema: utilities}'
 
   demo-up-prod:
-    desc: Reconciles the prod_dbt_demo database, warehouses, and roles. No data seeding.
+    desc: Creates the PROD database, warehouses, and roles, then seeds the raw tables.
     cmds:
-      - task: snowflake-resources-up
+#      - task: snowflake-resources-up
+#        vars:
+#          DCM_TARGET: PROD
+#          DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_prod'
+##          DCM_VARIABLES: '-D "base=''dbt_demo_prod''" -D "admin_users=[''$DBT_PDB_USERNAME'']"'
+#          DCM_ALIAS: 'prod_up'
+#
+#      - task: seed-raw-source-tables
+#        vars:
+#          SEED_BASE: 'dbt_demo_prod'
+
+      - task: snow-cli:sort-and-process-sql-folder
         vars:
-          DCM_TARGET: PROD
+          SQL_SORT_PROCESS_DIR: sql/prod-ci-cd
+          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+
+      - task: dbt:create-udf-concatenate-object-values
+        vars:
+          TARGET: pdb-keypair-auth
+          ARGS: '{database: dbt_demo_prod, schema: utilities}'
+      - task: dbt:create-udf-generate-surrogate-key
+        vars:
+          TARGET: pdb-keypair-auth
+          ARGS: '{database: dbt_demo_prod, schema: utilities}'
 
   demo-teardown-pdb:
     desc: Purges the DBT_PDB_USERNAME sandbox and unregisters its DCM project. Irreversible.
@@ -235,80 +287,82 @@ tasks:
           DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
           DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
 
-  dbt-project-compile:
-    desc: Compiles the deployed project object. Cheap way to validate profiles.yml, env.yml, and refs before building.
+  # Shared body for every dbt-project-run-* entrypoint below.
+  #
+  # Exists so the execution contract lives in one place: the PAT connection, the
+  # sandbox warehouse, the env.yml environment, and the DBT_PDB_USERNAME guards.
+  # The entrypoints then differ only in their dbt selection, which is the only
+  # thing that should distinguish them.
+  dbt-project-execute:
+    desc: Runs a dbt command on the deployed project object against the caller's sandbox.
+    internal: true
+    preconditions:
+      - sh: '[ -n "$DBT_PDB_USERNAME" ]'
+        msg: "DBT_PDB_USERNAME is not set. Add it to .env/demo.env, e.g. DBT_PDB_USERNAME=dgillis"
+      - sh: 'printf "%s" "$DBT_PDB_USERNAME" | grep -Eq "^[A-Za-z_][A-Za-z0-9_]*$"'
+        msg: "DBT_PDB_USERNAME must be letters, digits and underscores only, not starting with a digit."
     cmds:
       - task: dbt-projects:execute-dbt-project
         vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          # NOT CLI_CONNECTION_NAME. Execution runs as the sandbox owner over a
+          # role-restricted PAT, which is also what makes env.yml's CURRENT_USER()
+          # resolve to this sandbox rather than to an admin's username.
+          CLI_CONNECTION_NAME: $DBT_EXEC_CONNECTION_NAME
           DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
           DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
           DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
-          DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dev_dbt_demo_s_wh"}}'
-          DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dev"}}'
-          DBT_ARGS: 'compile --target dev'
+          # Outer-session warehouse, matched to the one env.yml gives dbt so a
+          # single run does not wake two. $DBT_PDB_USERNAME is left for the shell
+          # to expand, the same way DCM_IDENTIFIER is built in demo-up-pdb.
+          DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dbt_pdb_${DBT_PDB_USERNAME}_s_wh"}}'
+          DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dbt_pdb"}}'
+          DBT_ARGS: '{{.DBT_ARGS}}'
+          DBT_ENV_VARS: '{{.DBT_ENV_VARS | default ""}}'
+
+  dbt-project-compile:
+    desc: Compiles the deployed project object. Cheap way to validate profiles.yml, env.yml, and refs before building.
+    cmds:
+      - task: dbt-project-execute
+        vars:
+          DBT_ARGS: 'compile --target dbt_pdb'
 
   dbt-project-run-country-dimension:
     desc: Builds d_country and its upstream staging view on Snowflake. Counterpart of dbt:build-country-dimension.
     cmds:
-      - task: dbt-projects:execute-dbt-project
+      # The narrowest useful build: 2 models, stg_pos__country and d_country.
+      # Same selection as dbt:build-country-dimension, and against the same
+      # sandbox database, so the local and remote paths are directly comparable.
+      #
+      # --target dbt_pdb, not dev: the dev target reads
+      # env_var('DBT_CURRENT_SCHEMA'), which only the dev and prod environments
+      # set. Pairing it with ENVIRONMENT=dbt_pdb fails on the missing variable.
+      - task: dbt-project-execute
         vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
-          DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
-          DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
-          DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dev_dbt_demo_s_wh"}}'
-          DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dev"}}'
-          # The narrowest useful build: 2 models, stg_pos__country and d_country.
-          # Same selection as dbt:build-country-dimension, and with ENVIRONMENT=dev
-          # the same two relations, so the local and remote paths are comparable.
-          DBT_ARGS: 'build --select +d_country --target dev'
+          DBT_ARGS: 'build --select +d_country --target dbt_pdb'
 
   dbt-project-run-marts:
     desc: Builds the models/marts dimensions and their upstream staging views, with tests.
     cmds:
-      - task: dbt-projects:execute-dbt-project
+      # +path:models/marts pulls in the 8 upstream staging views (cheap).
+      # The two fact tables are excluded: they are 248M and 673M rows and
+      # are built by dbt-project-run-facts on a larger warehouse.
+      - task: dbt-project-execute
         vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
-          DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
-          DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
-          DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dev_dbt_demo_s_wh"}}'
-          DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dev"}}'
-          # +path:models/marts pulls in the 8 upstream staging views (cheap).
-          # The two fact tables are excluded: they are 248M and 673M rows and
-          # are built by dbt-project-run-facts on a larger warehouse.
-          DBT_ARGS: 'build --select +path:models/marts --exclude f_order f_order_line --target dev'
-
-  dbt-project-run-marts-dev-user:
-    desc: Builds the marts into your OWN schema, named after your Snowflake user, instead of the shared modeled schema.
-    cmds:
-      - task: dbt-projects:execute-dbt-project
-        vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
-          DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
-          DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
-          DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dev_dbt_demo_s_wh"}}'
-          DBT_ENVIRONMENT: 'dev_user'
-          DBT_ARGS: 'build --select +path:models/marts --exclude f_order f_order_line --target dev'
+          DBT_ARGS: 'build --select +path:models/marts --exclude f_order f_order_line --target dbt_pdb'
 
   dbt-project-run-facts:
     desc: Builds f_order (248M rows) and f_order_line (673M rows) on a larger warehouse. Expensive, opt-in.
+    vars:
+      DBT_FACTS_WAREHOUSE: '{{.DBT_FACTS_WAREHOUSE | default "dbt_pdb_${DBT_PDB_USERNAME}_xl_wh"}}'
     cmds:
-      - task: dbt-projects:execute-dbt-project
+      - task: dbt-project-execute
         vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
-          DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
-          DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
-          DBT_WAREHOUSE: '{{.DBT_FACTS_WAREHOUSE | default "dev_dbt_demo_xl_wh"}}'
-          DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dev"}}'
+          DBT_WAREHOUSE: '{{.DBT_FACTS_WAREHOUSE}}'
           # ENV_VARS takes final precedence over env.yml, so the run uses the
           # larger warehouse without editing the file. Keep this aligned with
           # DBT_WAREHOUSE above so only one warehouse wakes up.
-          DBT_ENV_VARS: "'DBT_CURRENT_WH' = '{{.DBT_FACTS_WAREHOUSE | default \"dev_dbt_demo_xl_wh\"}}'"
-          DBT_ARGS: 'run --select f_order f_order_line --target dev'
+          DBT_ENV_VARS: "'DBT_CURRENT_WH' = '{{.DBT_FACTS_WAREHOUSE}}'"
+          DBT_ARGS: 'run --select f_order f_order_line --target dbt_pdb'
 
   pat-create:
     desc: Mints the dev_dbt_demo_pat token and exports it as DBT_ENV_SECRET_PAT in ~/.zshrc.
@@ -401,20 +455,27 @@ tasks:
 
   dbt-project-run-marts-tailed:
     desc: Runs the marts build asynchronously and streams its log output while it executes.
+    preconditions:
+      - sh: '[ -n "$DBT_PDB_USERNAME" ]'
+        msg: "DBT_PDB_USERNAME is not set. Add it to .env/demo.env, e.g. DBT_PDB_USERNAME=dgillis"
     cmds:
       # Same selection as dbt-project-run-marts, submitted asynchronously so the
       # logs can be followed live instead of arriving in one block at the end.
       #
       # Caveat worth knowing: `snow dbt execute` on CLI 3.24.1 cannot pass
-      # ENVIRONMENT, so this run uses env.yml's default_environment (dev) and
-      # cannot target dev_user or prod. For those, use the regular
-      # dbt-project-run-* task and read the logs afterwards with
-      # `task dbt-project-logs`.
+      # ENVIRONMENT, so this run uses env.yml's default_environment (dbt_pdb) and
+      # cannot target dev or prod. For those, use the regular dbt-project-run-*
+      # task and read the logs afterwards with `task dbt-project-logs`.
+      #
+      # Both connections are passed: the sandbox PAT connection submits and polls
+      # the run, the admin connection reads the account-wide event table. Neither
+      # can do the other's job -- see the script header.
       - task: dbt-projects:tail-dbt-project-run
         vars:
+          DBT_EXEC_CONNECTION_NAME: $DBT_EXEC_CONNECTION_NAME
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
           DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
           DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
           DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
-          DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dev_dbt_demo_s_wh"}}'
-          DBT_ARGS: 'build --select +path:models/marts --exclude f_order f_order_line --target dev'
+          DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dbt_pdb_${DBT_PDB_USERNAME}_s_wh"}}'
+          DBT_ARGS: 'build --select +path:models/marts --exclude f_order f_order_line --target dbt_pdb'
