@@ -38,10 +38,10 @@ lands in*. That is the whole idea: promote the code, not a rewrite of it.
 | | Stage 1 - Local | Stage 2 - dbt Projects on Snowflake | Stage 3 - GitHub Actions |
 | --- | --- | --- | --- |
 | dbt executes on | your laptop | Snowflake | a CI runner, targeting Snowflake |
-| Credentials | a target in `~/.dbt/profiles.yml` | none stored: the session that issued `EXECUTE DBT PROJECT` | repo secrets |
+| Credentials | a target in `~/.dbt/profiles.yml` | none in the project: the PAT connection that issues `EXECUTE DBT PROJECT` | repo secrets |
 | Code source | your working tree, committed or not | a versioned `DBT PROJECT` object | the merged commit |
-| Writes to | `dev_dbt_demo`, shared schemas | `dev_dbt_demo`, per-developer schema | `prod_dbt_demo` |
-| Entrypoint | `task dbt-build-marts` | `task dbt-project-run-marts-dev-user` | *(stage 3)* |
+| Writes to | `dbt_pdb_<user>`, shared schemas | `dbt_pdb_<user>`, shared schemas | `prod_dbt_demo` |
+| Entrypoint | `task dbt-build-marts` | `task dbt-project-run-marts` | *(stage 3)* |
 
 Each stage trades feedback speed for reproducibility. Stage 1 will run code you
 have not committed, which is exactly what you want while iterating and exactly
