@@ -1,5 +1,5 @@
-dbt-projects:
-  target: dev
+default:
+  target: prod
   outputs:
     prod:
       type: snowflake
