@@ -1,0 +1,46 @@
+default:
+  target: dev
+  outputs:
+    # Compile-only target, paired with the `deploy` environment in env.yml.
+    # `snow dbt deploy` runs a compilation phase that opens a session with this
+    # target's role, so it needs one that exists regardless of which environments
+    # are currently deployed. It never materializes anything.
+    deploy:
+      type: snowflake
+      account: "not needed"
+      user: "not needed"
+      role: "{{ env_var('DBT_CURRENT_ROLE') }}"
+      database: "{{ env_var('DBT_CURRENT_DB') }}"
+      schema: "{{ env_var('DBT_CURRENT_SCHEMA') }}"
+      warehouse: "{{ env_var('DBT_CURRENT_WH') }}"
+      threads: 8
+
+    dbt_pdb:
+      type: snowflake
+      account: "not needed"
+      user: "not needed"
+      role: "{{ env_var('DBT_CURRENT_ROLE') }}"
+      database: "{{ env_var('DBT_CURRENT_DB') }}"
+      schema: modeled
+      warehouse: "{{ env_var('DBT_CURRENT_WH') }}"
+      threads: 8
+
+    dev:
+      type: snowflake
+      account: "not needed"
+      user: "not needed"
+      role: "{{ env_var('DBT_CURRENT_ROLE') }}"
+      database: "{{ env_var('DBT_CURRENT_DB') }}"
+      schema: "{{ env_var('DBT_CURRENT_SCHEMA') }}"
+      warehouse: "{{ env_var('DBT_CURRENT_WH') }}"
+      threads: 8
+
+    prod:
+      type: snowflake
+      account: "not needed"
+      user: "not needed"
+      role: "{{ env_var('DBT_CURRENT_ROLE') }}"
+      database: "{{ env_var('DBT_CURRENT_DB') }}"
+      schema: "{{ env_var('DBT_CURRENT_SCHEMA') }}"
+      warehouse: "{{ env_var('DBT_CURRENT_WH') }}"
+      threads: 8
