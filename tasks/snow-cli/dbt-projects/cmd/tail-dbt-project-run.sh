@@ -25,33 +25,62 @@ set -euo pipefail
 #   - `snow dbt execute` on Snowflake CLI 3.24.1 has no way to pass ENVIRONMENT or
 #     ENV_VARS; those exist only on the EXECUTE DBT PROJECT SQL command. This run
 #     therefore uses whatever `default_environment` env.yml specifies (currently
-#     dev). To run any other environment, use the SQL path and read the logs
+#     dbt_pdb). To run any other environment, use the SQL path and read the logs
 #     afterwards with `task dbt-project-logs`.
 #   - Event table writes lag by up to 10 seconds, so the tail trails the run and
 #     the last lines arrive after the run is already reported complete. The script
 #     does a final drain pass to catch them.
 #
-# Usage: cmd/tail-dbt-project-run.sh CONNECTION PROJECT_FQN WAREHOUSE DBT_COMMAND [POLL_SECONDS] [MAX_WAIT_SECONDS]
+# TWO CONNECTIONS, because the run and the reading of it need different privileges:
+#
+#   - EXEC_CONNECTION submits the run and polls its status. It authenticates as the
+#     sandbox owner with a role-restricted PAT, which is what makes env.yml's
+#     CURRENT_USER() resolve to the right sandbox. Its query status is read with
+#     query_history_by_user(), which returns only the CALLING user's queries -- so
+#     this poll has to happen on the same connection that submitted, not the admin
+#     one.
+#   - TELEMETRY_CONNECTION reads SNOWFLAKE.TELEMETRY.EVENTS, which requires
+#     ACCOUNTADMIN or SNOWFLAKE.EVENTS_VIEWER. That event table is ACCOUNT-WIDE, so
+#     granting the sandbox role access to it would expose every other workload's
+#     telemetry on the account. An admin connection reads it instead.
+#
+# Usage: cmd/tail-dbt-project-run.sh EXEC_CONNECTION TELEMETRY_CONNECTION PROJECT_FQN WAREHOUSE DBT_COMMAND [POLL_SECONDS] [MAX_WAIT_SECONDS]
 # Run from tasks/snow-cli/dbt-projects (the Taskfile include sets that directory).
 
-CLI_CONNECTION_NAME="${1:-}"
-PROJECT_FQN="${2:-}"
-WAREHOUSE="${3:-}"
-DBT_COMMAND="${4:-}"
-POLL_SECONDS="${5:-5}"
-MAX_WAIT_SECONDS="${6:-1800}"
+EXEC_CONNECTION="${1:-}"
+TELEMETRY_CONNECTION="${2:-}"
+PROJECT_FQN="${3:-}"
+WAREHOUSE="${4:-}"
+DBT_COMMAND="${5:-}"
+POLL_SECONDS="${6:-5}"
+MAX_WAIT_SECONDS="${7:-1800}"
 
 for pair in \
-    "CONNECTION:$CLI_CONNECTION_NAME" \
+    "EXEC_CONNECTION:$EXEC_CONNECTION" \
+    "TELEMETRY_CONNECTION:$TELEMETRY_CONNECTION" \
     "PROJECT_FQN:$PROJECT_FQN" \
     "WAREHOUSE:$WAREHOUSE" \
     "DBT_COMMAND:$DBT_COMMAND"; do
     if [ -z "${pair#*:}" ]; then
         echo "Error: ${pair%%:*} is required." >&2
-        echo "Usage: cmd/tail-dbt-project-run.sh CONNECTION PROJECT_FQN WAREHOUSE DBT_COMMAND [POLL_SECONDS] [MAX_WAIT_SECONDS]" >&2
+        echo "Usage: cmd/tail-dbt-project-run.sh EXEC_CONNECTION TELEMETRY_CONNECTION PROJECT_FQN WAREHOUSE DBT_COMMAND [POLL_SECONDS] [MAX_WAIT_SECONDS]" >&2
         exit 1
     fi
 done
+
+if [ -z "${DBT_ENV_SECRET_PAT:-}" ]; then
+    echo "Error: DBT_ENV_SECRET_PAT is not set, so $EXEC_CONNECTION has no token." >&2
+    echo "       Mint one with \`task pat-create\`, then \`source ~/.zshrc\`." >&2
+    exit 1
+fi
+
+# The execution connection stores no password; the token is supplied here as
+# SNOWFLAKE_CONNECTIONS_<CONNECTION>_PASSWORD so it has exactly one home. Note the
+# generic SNOWFLAKE_PASSWORD is silently ignored for a named connection. Exported
+# rather than passed as an argument, because argv is visible via `ps`.
+EXEC_CONNECTION_SUFFIX=$(printf '%s' "$EXEC_CONNECTION" | tr 'a-z-' 'A-Z_')
+export "SNOWFLAKE_CONNECTIONS_${EXEC_CONNECTION_SUFFIX}_PASSWORD=$DBT_ENV_SECRET_PAT"
+
 
 # --------------------------------------------------------------------------
 # Submit
@@ -69,7 +98,7 @@ echo "Submitting: $DBT_COMMAND"
 # shellcheck disable=SC2086
 SUBMIT_OUTPUT=$(snow dbt execute \
     --run-async \
-    --connection "$CLI_CONNECTION_NAME" \
+    --connection "$EXEC_CONNECTION" \
     --warehouse "$WAREHOUSE" \
     "$PROJECT_FQN" \
     $DBT_COMMAND 2>&1) || {
@@ -104,8 +133,11 @@ LAST_TS="1970-01-01 00:00:00.000"
 fetch_new_events() {
     # Ordered ASC so the run reads chronologically, and so the final row is the
     # newest and can be used as the next watermark.
+    #
+    # Admin connection: the event table is account-wide and reading it needs
+    # ACCOUNTADMIN or EVENTS_VIEWER, which the sandbox role deliberately lacks.
     snow sql \
-        --connection "$CLI_CONNECTION_NAME" \
+        --connection "$TELEMETRY_CONNECTION" \
         --format json \
         --query "
             SELECT
@@ -160,8 +192,11 @@ if newest:
 }
 
 run_state() {
+    # Execution connection, not the admin one: query_history_by_user() returns only
+    # the CALLING user's queries, so the submitting connection is the only one that
+    # can see this run.
     snow sql \
-        --connection "$CLI_CONNECTION_NAME" \
+        --connection "$EXEC_CONNECTION" \
         --format json \
         --query "
             SELECT execution_status
