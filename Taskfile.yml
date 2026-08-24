@@ -44,13 +44,8 @@ tasks:
     desc: Loads any RAW source table that is empty by COPY INTO from the public Tasty Bytes S3 bucket.
     internal: true
     vars:
-      # The database to load into, which is also the DCM `base` for the target.
-      # dev_dbt_demo by default; demo-up-pdb overrides it with the sandbox name.
       SEED_BASE: '{{.SEED_BASE | default "dev_dbt_demo"}}'
     cmds:
-      # Data, not structure, so this stays imperative: DCM has no COPY INTO. The
-      # table schemas themselves are declared in
-      # dcm/sources/definitions/raw_tables.sql.
       - task: snow-cli:sort-and-process-sql-folder
         vars:
           SQL_SORT_PROCESS_DIR: sql/seed
@@ -61,15 +56,8 @@ tasks:
     desc: Grants the sandbox's data engineer role the privileges to run the deployed dbt project object.
     internal: true
     vars:
-      # The base name whose _data_engineer role receives the grants.
       GRANT_BASE: '{{.GRANT_BASE | default "dev_dbt_demo"}}'
     cmds:
-      # Run as admin, not as the sandbox: these grant access to the shared util
-      # database, which the sandbox role has no authority over.
-      #
-      # Kept out of sql/bootstrap deliberately. bootstrap runs for DEV, PROD and
-      # DBT_PDB alike with no template variables, so a file needing <% base %>
-      # would leave an unresolved placeholder in a role name on the other paths.
       - task: snow-cli:sort-and-process-sql-folder
         vars:
           SQL_SORT_PROCESS_DIR: sql/dbt-project-grants
@@ -92,14 +80,6 @@ tasks:
         vars:
           DCM_TARGET: DBT_PDB
           DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_pdb_$DBT_PDB_USERNAME'
-          # admin_users is overridden alongside base because the sandbox is named
-          # after its owner, so that person is exactly who should hold its data
-          # engineer role. The manifest ships DBT_PDB with admin_users: [] on
-          # purpose -- a checked-in name would grant one developer access to every
-          # other developer's sandbox -- so the grant has to come from the same
-          # runtime value that names the objects. Without it the sandbox roles
-          # exist but are assigned to nobody, and local dbt cannot reach the
-          # database at all.
           DCM_VARIABLES: '-D "base=''dbt_pdb_$DBT_PDB_USERNAME''" -D "admin_users=[''$DBT_PDB_USERNAME'']"'
           DCM_ALIAS: 'pdb_up'
 
@@ -107,10 +87,6 @@ tasks:
         vars:
           SEED_BASE: 'dbt_pdb_$DBT_PDB_USERNAME'
 
-      # The marts all call utilities.udf_generate_surrogate_key, so a sandbox
-      # without these two UDFs fails on the first model. demo-up-dev creates them
-      # for dev; this does the same for the sandbox, into the sandbox's own
-      # utilities schema.
       - task: dbt:create-udf-concatenate-object-values
         vars:
           TARGET: pdb-keypair-auth
@@ -120,10 +96,6 @@ tasks:
           TARGET: pdb-keypair-auth
           ARGS: '{database: dbt_pdb_$DBT_PDB_USERNAME, schema: utilities}'
 
-      # Lets the sandbox role run the deployed DBT PROJECT object, which lives in
-      # the shared util database rather than in the sandbox. Without this the
-      # dbt-project-run-* tasks fail on the project object being invisible to the
-      # PAT connection's role.
       - task: grant-dbt-project-execution
         vars:
           GRANT_BASE: 'dbt_pdb_$DBT_PDB_USERNAME'
@@ -148,16 +120,16 @@ tasks:
   demo-up-prod:
     desc: Creates the PROD database, warehouses, and roles, then seeds the raw tables.
     cmds:
-#      - task: snowflake-resources-up
-#        vars:
-#          DCM_TARGET: PROD
-#          DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_prod'
-##          DCM_VARIABLES: '-D "base=''dbt_demo_prod''" -D "admin_users=[''$DBT_PDB_USERNAME'']"'
-#          DCM_ALIAS: 'prod_up'
-#
-#      - task: seed-raw-source-tables
-#        vars:
-#          SEED_BASE: 'dbt_demo_prod'
+      - task: snowflake-resources-up
+        vars:
+          DCM_TARGET: PROD
+          DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_prod'
+#          DCM_VARIABLES: '-D "base=''dbt_demo_prod''" -D "admin_users=[''$DBT_PDB_USERNAME'']"'
+          DCM_ALIAS: 'prod_up'
+
+      - task: seed-raw-source-tables
+        vars:
+          SEED_BASE: 'dbt_demo_prod'
 
       - task: snow-cli:sort-and-process-sql-folder
         vars:
@@ -191,12 +163,6 @@ tasks:
   demo-teardown-dev:
     desc: Purges the dev_dbt_demo resources and unregisters the dev DCM project.
     cmds:
-      # DEV only. Dropping the shared util.dcm_project_archive schema used to be
-      # bundled in here, but that schema holds the project registration for EVERY
-      # target -- prod and every developer sandbox included -- so a task named
-      # after one environment was quietly account-wide. It orphaned a live sandbox
-      # exactly once, which was enough. It is now `task dcm-home-teardown`, run
-      # deliberately and last.
       - task: snowflake-resources-teardown
 
   snowflake-resources-teardown:
@@ -204,12 +170,6 @@ tasks:
     internal: true
     cmds:
       - task: validate-prerequisites:snowcli
-      # purge derives the object list from the same definitions the deploy used,
-      # so teardown can no longer drift from init the way sql/teardown did.
-      #
-      # Note purge takes no --variable flag, so the DBT_PDB sandbox is identified
-      # by its project object alone. That is sufficient: purge drops what the
-      # project currently manages, which is recorded in the project's own state.
       - task: snow-cli:dcm-purge
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
@@ -232,8 +192,6 @@ tasks:
   dcm-list:
     desc: Lists the DCM projects still registered in the shared project home schema.
     cmds:
-      # The safety check before dcm-home-teardown: anything listed here is still
-      # managed, and dropping the home schema would orphan it.
       - task: snow-cli:dcm-list
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
@@ -241,26 +199,6 @@ tasks:
   dcm-home-teardown:
     desc: "ACCOUNT-WIDE: drops the shared schema holding EVERY target's DCM project registration."
     cmds:
-      # Schema only, never the database. util is shared and predates this demo.
-      #
-      # util.dbt_project_archive is deliberately left alone: the DBT PROJECT
-      # object there accumulates a version history across deploys, and there is
-      # no reason to lose it because the databases it builds into were rebuilt.
-      #
-      # Its own entrypoint rather than the tail of demo-teardown-dev, because the
-      # blast radius is not one environment. This removes the registrations for
-      # ALL THREE targets, including every developer's personal sandbox. Anything
-      # still deployed is left with nothing managing it: the database, warehouses
-      # and roles survive, but no project knows about them, so they can no longer
-      # be planned, deployed or purged.
-      #
-      # Run `task demo-teardown-dev` / `demo-teardown-prod` / `demo-teardown-pdb`
-      # for everything that was ever deployed FIRST, then this. `task dcm-list`
-      # shows what is still registered.
-      #
-      # If this is run too early, UNDROP SCHEMA util.dcm_project_archive restores
-      # the registrations and their deployment history -- but only inside the
-      # database's Time Travel window, which is 1 day.
       - task: snow-cli:drop-schema-if-exists
         vars:
           CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
@@ -269,9 +207,6 @@ tasks:
   dbt-build-marts:
     desc: Builds the marts dimensions and their upstream models locally. Local counterpart of dbt-project-run-marts.
     cmds:
-      # Thin wrapper over the namespaced task so the local entrypoint reads
-      # symmetrically with dbt-project-run-marts below. Same selection, same
-      # exclusions; the only difference is where dbt itself executes.
       - task: dbt:build-dimensions
         vars:
           DBT_TARGET: '{{.DBT_TARGET | default "dev-tastyb"}}'
@@ -287,12 +222,6 @@ tasks:
           DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
           DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
 
-  # Shared body for every dbt-project-run-* entrypoint below.
-  #
-  # Exists so the execution contract lives in one place: the PAT connection, the
-  # sandbox warehouse, the env.yml environment, and the DBT_PDB_USERNAME guards.
-  # The entrypoints then differ only in their dbt selection, which is the only
-  # thing that should distinguish them.
   dbt-project-execute:
     desc: Runs a dbt command on the deployed project object against the caller's sandbox.
     internal: true
@@ -311,9 +240,6 @@ tasks:
           DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
           DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
           DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
-          # Outer-session warehouse, matched to the one env.yml gives dbt so a
-          # single run does not wake two. $DBT_PDB_USERNAME is left for the shell
-          # to expand, the same way DCM_IDENTIFIER is built in demo-up-pdb.
           DBT_WAREHOUSE: '{{.DBT_WAREHOUSE | default "dbt_pdb_${DBT_PDB_USERNAME}_s_wh"}}'
           DBT_ENVIRONMENT: '{{.DBT_ENVIRONMENT | default "dbt_pdb"}}'
           DBT_ARGS: '{{.DBT_ARGS}}'
@@ -329,13 +255,6 @@ tasks:
   dbt-project-run-country-dimension:
     desc: Builds d_country and its upstream staging view on Snowflake. Counterpart of dbt:build-country-dimension.
     cmds:
-      # The narrowest useful build: 2 models, stg_pos__country and d_country.
-      # Same selection as dbt:build-country-dimension, and against the same
-      # sandbox database, so the local and remote paths are directly comparable.
-      #
-      # --target dbt_pdb, not dev: the dev target reads
-      # env_var('DBT_CURRENT_SCHEMA'), which only the dev and prod environments
-      # set. Pairing it with ENVIRONMENT=dbt_pdb fails on the missing variable.
       - task: dbt-project-execute
         vars:
           DBT_ARGS: 'build --select +d_country --target dbt_pdb'
@@ -343,9 +262,6 @@ tasks:
   dbt-project-run-marts:
     desc: Builds the models/marts dimensions and their upstream staging views, with tests.
     cmds:
-      # +path:models/marts pulls in the 8 upstream staging views (cheap).
-      # The two fact tables are excluded: they are 248M and 673M rows and
-      # are built by dbt-project-run-facts on a larger warehouse.
       - task: dbt-project-execute
         vars:
           DBT_ARGS: 'build --select +path:models/marts --exclude f_order f_order_line --target dbt_pdb'
@@ -358,17 +274,12 @@ tasks:
       - task: dbt-project-execute
         vars:
           DBT_WAREHOUSE: '{{.DBT_FACTS_WAREHOUSE}}'
-          # ENV_VARS takes final precedence over env.yml, so the run uses the
-          # larger warehouse without editing the file. Keep this aligned with
-          # DBT_WAREHOUSE above so only one warehouse wakes up.
           DBT_ENV_VARS: "'DBT_CURRENT_WH' = '{{.DBT_FACTS_WAREHOUSE}}'"
           DBT_ARGS: 'run --select f_order f_order_line --target dbt_pdb'
 
   pat-create:
     desc: Mints the dev_dbt_demo_pat token and exports it as DBT_ENV_SECRET_PAT in ~/.zshrc.
     vars:
-      # Resolved once here so the note below can interpolate it without escaping
-      # quotes inside a YAML block scalar, which the template lexer rejects.
       RC_FILE_DISPLAY: '{{.SHELL_RC_FILE | default "~/.zshrc"}}'
     cmds:
       - task: validate-prerequisites:snowcli
@@ -379,16 +290,8 @@ tasks:
           PAT_NAME: '{{.PAT_NAME | default "dbt_pdb_tastyb_pat"}}'
           PAT_ROLE_RESTRICTION: '{{.PAT_ROLE_RESTRICTION | default "dbt_pdb_tastyb_data_engineer"}}'
           PAT_DAYS_TO_EXPIRY: '{{.PAT_DAYS_TO_EXPIRY | default "90"}}'
-          # Empty means the script falls back to $HOME/.zshrc.
           SHELL_RC_FILE: '{{.SHELL_RC_FILE | default ""}}'
 
-      # The new token was written to the rc file, but an env var already exported
-      # into THIS shell keeps its old value: a child process inherits the
-      # environment as it was, and nothing the task does can reach back up and
-      # change the parent. So a dbt run started from this same shell keeps sending
-      # the previous token, and once that one has been replaced server-side the
-      # failure is an authentication error, which reads like a bad password rather
-      # than a stale variable.
       - cmd: |
           printf '\n%s\n' "NOTE: this shell still holds the PREVIOUS DBT_ENV_SECRET_PAT."
           printf '%s\n'   "      The new token is only in {{.RC_FILE_DISPLAY}}, so dbt runs started"
