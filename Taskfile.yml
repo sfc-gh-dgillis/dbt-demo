@@ -100,23 +100,6 @@ tasks:
         vars:
           GRANT_BASE: 'dbt_pdb_$DBT_PDB_USERNAME'
 
-  demo-up-dev:
-    desc: |
-      Usage: `task demo-up` if using the default demo.env file. Use `DOTENV_FILENAME=custom.env task demo-up`
-      if using a custom .env file (filename does not have to be custom.env, but must end with .env).
-
-    cmds:
-      - task: snowflake-resources-up
-      - task: seed-raw-source-tables
-      - task: dbt:create-udf-concatenate-object-values
-        vars:
-          TARGET: dev-keypair-auth
-          ARGS: '{database: dev_dbt_demo, schema: utilities}'
-      - task: dbt:create-udf-generate-surrogate-key
-        vars:
-          TARGET: dev-keypair-auth
-          ARGS: '{database: dev_dbt_demo, schema: utilities}'
-
   demo-up-prod:
     desc: Creates the PROD database, warehouses, and roles, then seeds the raw tables.
     cmds:
@@ -159,28 +142,6 @@ tasks:
         vars:
           DCM_TARGET: DBT_PDB
           DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_pdb_$DBT_PDB_USERNAME'
-
-  demo-teardown-dev:
-    desc: Purges the dev_dbt_demo resources and unregisters the dev DCM project.
-    cmds:
-      - task: snowflake-resources-teardown
-
-  snowflake-resources-teardown:
-    desc: Purges every object managed by the DCM target, then unregisters the project.
-    internal: true
-    cmds:
-      - task: validate-prerequisites:snowcli
-      - task: snow-cli:dcm-purge
-        vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-          DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
-      # purge leaves the project registration behind; drop removes the metadata.
-      - task: snow-cli:dcm-drop
-        vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-          DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
 
   demo-teardown-prod:
     desc: Purges the prod_dbt_demo resources and unregisters the prod DCM project.
