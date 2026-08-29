@@ -15,6 +15,7 @@ targets:
     project_name: 'util.dcm_project_archive.dbt_demo_prod'
     project_owner: ACCOUNTADMIN
     templating_config: 'PROD'
+
   # Per-developer sandbox. Both project_name here and `base` in the DBT_PDB
   # configuration are overridden at run time with the caller's username, so the
   # real project object is util.dcm_project_archive.dbt_demo_pdb_<user>.
@@ -42,10 +43,10 @@ templating:
     # hardcoded the "_dbt_demo" stem into all 93 references, so a target could
     # only ever be <something>_dbt_demo -- there was no way to express a name like
     # dbt_pdb_dgillis.
-    base: 'dbt_demo_dev'
+    base: 'dbt_demo_prod'
 
     # Human-readable form used in COMMENT text.
-    env_label: 'dev'
+    env_label: 'prod'
 
     # The warehouse fleet. Sizes are per-configuration so prod can run bigger
     # compute without duplicating the definitions.
@@ -73,11 +74,6 @@ templating:
     admin_users: []
 
   configurations:
-    DEV:
-      base: 'dbt_demo_dev'
-      env_label: 'dev'
-      admin_users: ['tastyb']
-
     PROD:
       base: 'dbt_demo_prod'
       env_label: 'prod'
