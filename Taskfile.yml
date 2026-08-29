@@ -267,7 +267,7 @@ tasks:
           DBT_ARGS: 'build --select +path:models/marts --exclude f_order f_order_line --target dbt_pdb'
 
   dbt-project-run-facts:
-    desc: Builds f_order (248M rows) and f_order_line (673M rows) on a larger warehouse. Expensive, opt-in.
+    desc: Builds f_order (248M+ rows) and f_order_line (673M+ rows) on a larger warehouse. Expensive, opt-in.
     vars:
       DBT_FACTS_WAREHOUSE: '{{.DBT_FACTS_WAREHOUSE | default "dbt_pdb_${DBT_PDB_USERNAME}_xl_wh"}}'
     cmds:
