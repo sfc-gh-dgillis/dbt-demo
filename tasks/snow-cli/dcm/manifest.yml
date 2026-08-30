@@ -43,8 +43,7 @@ templating:
     PROD:
       base: 'dbt_prod'
       env_label: 'prod'
-      # No standing human access to prod; grant deliberately.
-      admin_users: []
+      admin_users: [github_actions_service_user]
 
     DBT_PDB:
       env_label: 'pdb sandbox'

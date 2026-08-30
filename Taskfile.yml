@@ -111,6 +111,12 @@ tasks:
   demo-up-prod:
     desc: Creates the PROD database, warehouses, and roles, then seeds the raw tables.
     cmds:
+      - task: snow-cli:sort-and-process-sql-folder
+        vars:
+          SQL_SORT_PROCESS_DIR: sql/prod-ci-cd-step-1
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
+          SQL_VARIABLES: 'base=dbt_prod'
+
       - task: snowflake-resources-up
         vars:
           DCM_TARGET: PROD
@@ -118,13 +124,13 @@ tasks:
           DCM_ALIAS: 'Initial PROD deployment'
           DCM_VARIABLES:
 
-      - task: seed-raw-source-tables
-        vars:
-          SEED_BASE: 'dbt_prod'
+#      - task: seed-raw-source-tables
+#        vars:
+#          SEED_BASE: 'dbt_prod'
 
       - task: snow-cli:sort-and-process-sql-folder
         vars:
-          SQL_SORT_PROCESS_DIR: sql/prod-ci-cd
+          SQL_SORT_PROCESS_DIR: sql/prod-ci-cd-step-2
           SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
           SQL_VARIABLES: 'base=dbt_prod'
 

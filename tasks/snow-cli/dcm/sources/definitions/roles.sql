@@ -47,10 +47,6 @@ GRANT ROLE {{ base }}_analyst TO ROLE sysadmin;
 
 -- -----------------------------------------------------------------------
 -- Functional roles to users
---
--- Was a hardcoded `GRANT ROLE dbt_demo_data_engineer TO USER tastyb`, which
--- broke on any account without that user. Now driven by admin_users in
--- manifest.yml, per target.
 -- -----------------------------------------------------------------------
 {% for user_name in admin_users %}
 GRANT ROLE {{ base }}_data_engineer TO USER {{ user_name }};
