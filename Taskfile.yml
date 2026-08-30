@@ -21,47 +21,65 @@ tasks:
   snowflake-resources-up:
     desc: Validates Snowflake CLI, bootstraps the util database, then reconciles all infrastructure.
     internal: true
+    requires:
+      vars: [DCM_TARGET, DCM_VARIABLES]
     cmds:
       - task: validate-prerequisites:snowcli
       - task: snow-cli:sort-and-process-sql-folder
         vars:
           SQL_SORT_PROCESS_DIR: sql/bootstrap
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
       - task: snow-cli:dcm-create
         vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-          DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
+          DCM_TARGET: '{{.DCM_TARGET}}'
       - task: snow-cli:dcm-deploy
         vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-          DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-          DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
-          DCM_VARIABLES: '{{.DCM_VARIABLES | default ""}}'
-          DCM_ALIAS: '{{.DCM_ALIAS | default "demo_up"}}'
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
+          DCM_TARGET: '{{.DCM_TARGET}}'
+          DCM_VARIABLES: '{{.DCM_VARIABLES}}'
+          DCM_ALIAS: '{{.DCM_ALIAS | default "initial deployment"}}'
+
+  snowflake-resources-teardown:
+    desc: Purges every object managed by the DCM target, then unregisters the project.
+    internal: true
+    requires:
+      vars: [DCM_TARGET]
+    cmds:
+      - task: validate-prerequisites:snowcli
+
+      - task: snow-cli:dcm-purge
+        vars:
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
+          DCM_TARGET: '{{.DCM_TARGET}}'
+
+      - task: snow-cli:dcm-drop
+        vars:
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
+          DCM_TARGET: '{{.DCM_TARGET}}'
 
   seed-raw-source-tables:
     desc: Loads any RAW source table that is empty by COPY INTO from the public Tasty Bytes S3 bucket.
     internal: true
-    vars:
-      SEED_BASE: '{{.SEED_BASE | default "dev_dbt_demo"}}'
+    requires:
+      vars: [SEED_BASE]
     cmds:
       - task: snow-cli:sort-and-process-sql-folder
         vars:
           SQL_SORT_PROCESS_DIR: sql/seed
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
           SQL_VARIABLES: 'base={{.SEED_BASE}}'
 
   grant-dbt-project-execution:
     desc: Grants the sandbox's data engineer role the privileges to run the deployed dbt project object.
     internal: true
-    vars:
-      GRANT_BASE: '{{.GRANT_BASE | default "dev_dbt_demo"}}'
+    requires:
+      vars: [GRANT_BASE]
     cmds:
       - task: snow-cli:sort-and-process-sql-folder
         vars:
           SQL_SORT_PROCESS_DIR: sql/dbt-project-grants
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
           SQL_VARIABLES: >-
             base={{.GRANT_BASE}}
             dbt_project_database=$DBT_PROJECT_DATABASE
@@ -78,23 +96,13 @@ tasks:
     cmds:
       - task: snowflake-resources-up
         vars:
-          DCM_TARGET: DBT_PDB
-          DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_pdb_$DBT_PDB_USERNAME'
+          DCM_TARGET: DBT_PDB_DGILLIS
           DCM_VARIABLES: '-D "base=''dbt_pdb_$DBT_PDB_USERNAME''" -D "admin_users=[''$DBT_PDB_USERNAME'']"'
-          DCM_ALIAS: 'pdb_up'
+          DCM_ALIAS: 'Initial deployment'
 
       - task: seed-raw-source-tables
         vars:
           SEED_BASE: 'dbt_pdb_$DBT_PDB_USERNAME'
-
-      - task: dbt:create-udf-concatenate-object-values
-        vars:
-          TARGET: pdb-keypair-auth
-          ARGS: '{database: dbt_pdb_$DBT_PDB_USERNAME, schema: utilities}'
-      - task: dbt:create-udf-generate-surrogate-key
-        vars:
-          TARGET: pdb-keypair-auth
-          ARGS: '{database: dbt_pdb_$DBT_PDB_USERNAME, schema: utilities}'
 
       - task: grant-dbt-project-execution
         vars:
@@ -106,27 +114,19 @@ tasks:
       - task: snowflake-resources-up
         vars:
           DCM_TARGET: PROD
-          DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_prod'
-#          DCM_VARIABLES: '-D "base=''dbt_demo_prod''" -D "admin_users=[''$DBT_PDB_USERNAME'']"'
-          DCM_ALIAS: 'prod_up'
+          DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_prod'
+          DCM_ALIAS: 'Initial PROD deployment'
+          DCM_VARIABLES:
 
       - task: seed-raw-source-tables
         vars:
-          SEED_BASE: 'dbt_demo_prod'
+          SEED_BASE: 'dbt_prod'
 
       - task: snow-cli:sort-and-process-sql-folder
         vars:
           SQL_SORT_PROCESS_DIR: sql/prod-ci-cd
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-
-      - task: dbt:create-udf-concatenate-object-values
-        vars:
-          TARGET: pdb-keypair-auth
-          ARGS: '{database: dbt_demo_prod, schema: utilities}'
-      - task: dbt:create-udf-generate-surrogate-key
-        vars:
-          TARGET: pdb-keypair-auth
-          ARGS: '{database: dbt_demo_prod, schema: utilities}'
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
+          SQL_VARIABLES: 'base=dbt_prod'
 
   demo-teardown-pdb:
     desc: Purges the DBT_PDB_USERNAME sandbox and unregisters its DCM project. Irreversible.
@@ -140,8 +140,7 @@ tasks:
       # developer's sandbox, the shared dev database, or prod.
       - task: snowflake-resources-teardown
         vars:
-          DCM_TARGET: DBT_PDB
-          DCM_IDENTIFIER: 'util.dcm_project_archive.dbt_demo_pdb_$DBT_PDB_USERNAME'
+          DCM_TARGET: DBT_PDB_DGILLIS
 
   demo-teardown-prod:
     desc: Purges the prod_dbt_demo resources and unregisters the prod DCM project.
@@ -150,27 +149,13 @@ tasks:
         vars:
           DCM_TARGET: PROD
 
-  dcm-list:
-    desc: Lists the DCM projects still registered in the shared project home schema.
-    cmds:
-      - task: snow-cli:dcm-list
-        vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
-
   dcm-home-teardown:
     desc: "ACCOUNT-WIDE: drops the shared schema holding EVERY target's DCM project registration."
     cmds:
       - task: snow-cli:drop-schema-if-exists
         vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
           SCHEMA_FQN: util.dcm_project_archive
-
-  dbt-build-marts:
-    desc: Builds the marts dimensions and their upstream models locally. Local counterpart of dbt-project-run-marts.
-    cmds:
-      - task: dbt:build-dimensions
-        vars:
-          DBT_TARGET: '{{.DBT_TARGET | default "dev-tastyb"}}'
 
   dbt-project-deploy:
     desc: Stages and deploys the dbt project object to Snowflake (adds a new version if it exists).
@@ -178,7 +163,7 @@ tasks:
       - task: validate-prerequisites:snowcli
       - task: dbt-projects:deploy-dbt-project
         vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
           DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
           DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
           DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
@@ -194,10 +179,10 @@ tasks:
     cmds:
       - task: dbt-projects:execute-dbt-project
         vars:
-          # NOT CLI_CONNECTION_NAME. Execution runs as the sandbox owner over a
+          # NOT SNOW_CLI_ADMIN_CONNECTION_NAME. Execution runs as the sandbox owner over a
           # role-restricted PAT, which is also what makes env.yml's CURRENT_USER()
           # resolve to this sandbox rather than to an admin's username.
-          CLI_CONNECTION_NAME: $DBT_EXEC_CONNECTION_NAME
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $DBT_EXEC_CONNECTION_NAME
           DBT_PROJECT_DATABASE: $DBT_PROJECT_DATABASE
           DBT_PROJECT_SCHEMA: $DBT_PROJECT_SCHEMA
           DBT_PROJECT_OBJECT_NAME: $DBT_PROJECT_OBJECT_NAME
@@ -239,14 +224,14 @@ tasks:
           DBT_ARGS: 'run --select f_order f_order_line --target dbt_pdb'
 
   pat-create:
-    desc: Mints the dev_dbt_demo_pat token and exports it as DBT_ENV_SECRET_PAT in ~/.zshrc.
+    desc: Mints the dbt_pdb_tastyb_pat token and exports it as DBT_ENV_SECRET_PAT in ~/.zshrc.
     vars:
       RC_FILE_DISPLAY: '{{.SHELL_RC_FILE | default "~/.zshrc"}}'
     cmds:
       - task: validate-prerequisites:snowcli
       - task: snow-cli:create-pat
         vars:
-          CLI_CONNECTION_NAME: $CLI_CONNECTION_NAME
+          SNOW_CLI_ADMIN_CONNECTION_NAME: $SNOW_CLI_ADMIN_CONNECTION_NAME
           PAT_USER: '{{.PAT_USER | default "tastyb"}}'
           PAT_NAME: '{{.PAT_NAME | default "dbt_pdb_tastyb_pat"}}'
           PAT_ROLE_RESTRICTION: '{{.PAT_ROLE_RESTRICTION | default "dbt_pdb_tastyb_data_engineer"}}'

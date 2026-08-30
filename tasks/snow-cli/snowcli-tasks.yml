@@ -11,25 +11,25 @@ tasks:
       # fully literal, such as sql/bootstrap.
       SQL_VARIABLES: '{{.SQL_VARIABLES | default ""}}'
     cmds:
-      - python3 pyutil/snowclisp/snowclisp.py "{{.SQL_SORT_PROCESS_DIR}}" "{{.CLI_CONNECTION_NAME}}" {{.SQL_VARIABLES}}
+      - python3 pyutil/snowclisp/snowclisp.py "{{.SQL_SORT_PROCESS_DIR}}" "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}" {{.SQL_VARIABLES}}
 
   upload-files-to-internal-named-stage:
     desc: Uploads all files from the given directory to a Snowflake Internal stage using the Snowflake CLI and PUT command.
     internal: true
     cmds:
-      - python3 pyutil/snowcliput/snowcliput.py "{{.FILE_UPLOAD_DIR}}" "{{.CLI_CONNECTION_NAME}}" "{{.INTERNAL_NAMED_STAGE}}"
+      - python3 pyutil/snowcliput/snowcliput.py "{{.FILE_UPLOAD_DIR}}" "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}" "{{.INTERNAL_NAMED_STAGE}}"
 
   drop-database-if-exists:
     desc: Drops the specified Snowflake database if it exists using the Snowflake CLI.
     internal: true
     cmds:
-      - snow sql --connection "{{.CLI_CONNECTION_NAME}}" --query "DROP DATABASE IF EXISTS {{.DEMO_DATABASE_NAME}};"
+      - snow sql --connection "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}" --query "DROP DATABASE IF EXISTS {{.DEMO_DATABASE_NAME}};"
 
   drop-schema-if-exists:
     desc: Drops the specified Snowflake schema if it exists using the Snowflake CLI.
     internal: true
     cmds:
-      - snow sql --connection "{{.CLI_CONNECTION_NAME}}" --query "DROP SCHEMA IF EXISTS {{.SCHEMA_FQN}};"
+      - snow sql --connection "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}" --query "DROP SCHEMA IF EXISTS {{.SCHEMA_FQN}};"
 
   create-pat:
     desc: Mints a programmatic access token and exports it from the shell rc file.
@@ -40,7 +40,7 @@ tasks:
       # parsed out and written to the rc file without ever reaching a log or argv.
       - >-
         cmd/create-pat.sh
-        "{{.CLI_CONNECTION_NAME}}"
+        "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}"
         "{{.PAT_USER}}"
         "{{.PAT_NAME}}"
         "{{.PAT_ROLE_RESTRICTION}}"
@@ -67,14 +67,15 @@ tasks:
   # already opens with `USE ROLE accountadmin`.
   #
   # DCM_TARGET selects a target from dcm/manifest.yml, which bundles the project
-  # identifier with its templating configuration. DEV manages dev_dbt_demo and
-  # the dev_dbt_demo_* warehouses and roles; PROD manages the prod equivalents.
+  # identifier with its templating configuration. PROD manages dbt_demo_prod and
+  # its warehouses and roles; DBT_PDB manages a per-developer sandbox. There is no
+  # default: the manifest defines no default_target, and every caller passes one.
   #
   # Two optional overrides support the DBT_PDB per-developer sandbox target, whose
   # object names are not known until run time. Both default to empty, so the
-  # DEV and PROD command lines are unchanged:
+  # PROD command line is unchanged:
   #
-  #   DCM_IDENTIFIER  a fully qualified project object name, passed positionally.
+  #   DCM_IDENTIFIER  a fully qualified DCM project object name, passed positionally.
   #                   It takes precedence over the target's project_name, which is
   #                   how each developer's sandbox gets its own project
   #                   registration without a target per person.
@@ -93,14 +94,11 @@ tasks:
     internal: true
     vars:
       DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
-      DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
+      DCM_TARGET: '{{.DCM_TARGET}}'
     cmds:
-      # Both plan and deploy operate on a registered project object, and neither
-      # creates one. --if-not-exists keeps this idempotent across repeat runs.
       - >-
-        snow dcm create {{.DCM_IDENTIFIER}}
-        --connection "{{.CLI_CONNECTION_NAME}}"
+        snow dcm create
+        --connection "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}"
         --role ACCOUNTADMIN
         --from "{{.DCM_PROJECT_DIR}}"
         --target "{{.DCM_TARGET}}"
@@ -111,8 +109,8 @@ tasks:
     internal: true
     vars:
       DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
-      DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
+      DCM_TARGET: '{{.DCM_TARGET}}'
+      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER}}'
       DCM_VARIABLES: '{{.DCM_VARIABLES | default ""}}'
     cmds:
       # --save-output writes out/plan_result.json. Grants do not appear in the
@@ -120,7 +118,7 @@ tasks:
       # grantee role, so that file is the only way to review grant changes.
       - >-
         snow dcm plan {{.DCM_IDENTIFIER}}
-        --connection "{{.CLI_CONNECTION_NAME}}"
+        --connection "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}"
         --role ACCOUNTADMIN
         --from "{{.DCM_PROJECT_DIR}}"
         --target "{{.DCM_TARGET}}"
@@ -130,26 +128,22 @@ tasks:
   dcm-deploy:
     desc: Reconciles Snowflake with the DCM definitions for a target.
     internal: true
+    requires:
+      vars: [DCM_TARGET, DCM_VARIABLES]
     vars:
       DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
-      DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-      DCM_ALIAS: '{{.DCM_ALIAS | default "demo_up"}}'
-      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
-      DCM_VARIABLES: '{{.DCM_VARIABLES | default ""}}'
+      DCM_TARGET: '{{.DCM_TARGET}}'
+      DCM_ALIAS: '{{.DCM_ALIAS}}'
+#      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER}}'
+      DCM_VARIABLES: '{{.DCM_VARIABLES}}'
     cmds:
-      # --alias tags the deployment so `SHOW DEPLOYMENTS IN DCM PROJECT` reads as
-      # a history rather than a list of anonymous runs.
-      #
-      # Deployment aliases must be UNIQUE per project: reusing one fails with
-      # "There is already a version exists with alias <x>", which would break
-      # every demo-up after the first. The timestamp suffix keeps them unique.
       - >-
-        snow dcm deploy {{.DCM_IDENTIFIER}}
-        --connection "{{.CLI_CONNECTION_NAME}}"
+        snow dcm deploy
+        --connection "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}"
         --role ACCOUNTADMIN
         --from "{{.DCM_PROJECT_DIR}}"
         --target "{{.DCM_TARGET}}"
-        --alias "{{.DCM_ALIAS}}_$(date +%Y%m%d_%H%M%S)"
+        --alias "{{.DCM_ALIAS}} completed on $(date +%Y%m%d_%H%M%S)"
         {{.DCM_VARIABLES}}
 
   dcm-purge:
@@ -157,15 +151,15 @@ tasks:
     internal: true
     vars:
       DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
-      DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
+      DCM_TARGET: '{{.DCM_TARGET}}'
+      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER}}'
     cmds:
       # Replaces sql/teardown. Because the object list is derived from the same
       # definitions the deploy used, teardown can no longer drift from init.
       # --force skips the interactive prompt; this deletes data.
       - >-
         snow dcm purge {{.DCM_IDENTIFIER}}
-        --connection "{{.CLI_CONNECTION_NAME}}"
+        --connection "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}"
         --role ACCOUNTADMIN
         --from "{{.DCM_PROJECT_DIR}}"
         --target "{{.DCM_TARGET}}"
@@ -178,7 +172,7 @@ tasks:
     status:
       - >-
         ! cmd/dcm-project-exists.sh
-        "{{.CLI_CONNECTION_NAME}}"
+        "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}"
         "{{.DCM_TARGET}}"
         "{{.DCM_IDENTIFIER}}"
         "{{.DCM_PROJECT_DIR}}"
@@ -188,8 +182,8 @@ tasks:
     internal: true
     vars:
       DCM_PROJECT_DIR: '{{.DCM_PROJECT_DIR | default "dcm"}}'
-      DCM_TARGET: '{{.DCM_TARGET | default "DEV"}}'
-      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER | default ""}}'
+      DCM_TARGET: '{{.DCM_TARGET}}'
+      DCM_IDENTIFIER: '{{.DCM_IDENTIFIER}}'
     cmds:
       # Metadata only, so always run dcm-purge first if the objects should go too.
       #
@@ -198,7 +192,7 @@ tasks:
       # registration and drop has nothing left to remove.
       - >-
         snow dcm drop {{.DCM_IDENTIFIER}}
-        --connection "{{.CLI_CONNECTION_NAME}}"
+        --connection "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}"
         --role ACCOUNTADMIN
         --from "{{.DCM_PROJECT_DIR}}"
         --target "{{.DCM_TARGET}}"
@@ -213,5 +207,5 @@ tasks:
       # "No data". Query the home schema explicitly instead.
       - >-
         snow sql
-        --connection "{{.CLI_CONNECTION_NAME}}"
+        --connection "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}"
         --query "SHOW DCM PROJECTS IN SCHEMA util.dcm_project_archive;"

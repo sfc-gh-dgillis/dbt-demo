@@ -1,4 +1,4 @@
-USE DATABASE dbt_demo_prod;
+USE DATABASE <% base %>;
 USE SCHEMA utilities;
 
 -- Create NETWORK RULE for external access integration
@@ -17,4 +17,4 @@ CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION dbt_deps_ext_access
   ENABLED = TRUE;
 
 -- Grant USAGE so data engineers can select and use the integration
-GRANT USAGE ON INTEGRATION dbt_deps_ext_access TO ROLE dbt_demo_prod_data_engineer;
+GRANT USAGE ON INTEGRATION dbt_deps_ext_access TO ROLE <% base %>_data_engineer;

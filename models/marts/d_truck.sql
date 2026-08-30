@@ -2,7 +2,7 @@
 WITH pk_cte AS (SELECT spt.truck_id
                 FROM {{ ref('stg_pos__truck') }} spt)
 
-SELECT utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) as truck_key,
+SELECT {{ function('udf_generate_surrogate_key') }}(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) as truck_key,
        spt.truck_id                                                                 as truck_id,
        spt.year                                                                     as truck_year,
        spt.make                                                                     as truck_make,

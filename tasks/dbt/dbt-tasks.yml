@@ -1,62 +1,52 @@
 version: '3'
 
 vars:
-  DBT_TARGET: '{{.DBT_TARGET}}'
-  DBT_DEBUG_TARGET: '{{.DBT_DEBUG_TARGET}}'
+  DBT_LOCAL_TARGET: '{{.DBT_LOCAL_TARGET}}'
 
 tasks:
 
   debug:
     desc: Runs dbt debug against the local credentialed profile.
+    preconditions:
+      - sh: '[ -n "$DBT_LOCAL_TARGET" ]'
+        msg: "DBT_LOCAL_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_LOCAL_TARGET=pdb-tastyb task dbt:debug"
     cmds:
-      - dbt debug --target "{{.DBT_DEBUG_TARGET}}" --project-dir . --profiles-dir ~/.dbt
-
-  create-udf-concatenate-object-values:
-    desc: Creates the udf_concatenate_object_values UDF via dbt run-operation.
-    internal: true
-    cmds:
-      - dbt run-operation create_udf_concatenate_object_values --target "{{.TARGET}}" --args "{{.ARGS}}" --profiles-dir ~/.dbt
-
-  create-udf-generate-surrogate-key:
-    desc: Creates the udf_generate_surrogate_key UDF via dbt run-operation.
-    internal: true
-    cmds:
-      - dbt run-operation create_udf_generate_surrogate_key --target "{{.TARGET}}" --args "{{.ARGS}}" --profiles-dir ~/.dbt
+      - dbt debug --target "{{.DBT_LOCAL_TARGET}}" --project-dir . --profiles-dir ~/.dbt
 
   build-all:
     desc: Builds every model locally.
     preconditions:
-      - sh: '[ -n "$DBT_TARGET" ]'
-        msg: "DBT_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_TARGET=dev-tastyb task dbt:build-country-dimension"
+      - sh: '[ -n "$DBT_LOCAL_TARGET" ]'
+        msg: "DBT_LOCAL_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_LOCAL_TARGET=pdb-tastyb task dbt:build-country-dimension"
     internal: true
     cmds:
-      - dbt build --target "{{.DBT_TARGET}}" --project-dir . --profiles-dir ~/.dbt
+      - dbt build --target "{{.DBT_LOCAL_TARGET}}" --project-dir . --profiles-dir ~/.dbt
 
   build-country-dimension:
     desc: Builds the d_country dimension locally.
     preconditions:
-      - sh: '[ -n "$DBT_TARGET" ]'
-        msg: "DBT_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_TARGET=dev-tastyb task dbt:build-country-dimension"
+      - sh: '[ -n "$DBT_LOCAL_TARGET" ]'
+        msg: "DBT_LOCAL_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_LOCAL_TARGET=pdb-tastyb task dbt:build-country-dimension"
     cmds:
-      - dbt build --target "{{.DBT_TARGET}}" --project-dir . --select +d_country --profiles-dir ~/.dbt
+      - dbt build --target "{{.DBT_LOCAL_TARGET}}" --project-dir . --select +d_country --profiles-dir ~/.dbt
 
   build-dimensions:
     desc: Builds all marts locally
     preconditions:
-      - sh: '[ -n "$DBT_TARGET" ]'
-        msg: "DBT_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_TARGET=dev-tastyb task dbt:build-country-dimension"
+      - sh: '[ -n "$DBT_LOCAL_TARGET" ]'
+        msg: "DBT_LOCAL_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_LOCAL_TARGET=pdb-tastyb task dbt:build-country-dimension"
     cmds:
-      - dbt build --target "{{.DBT_TARGET}}" --project-dir . --profiles-dir ~/.dbt --select +path:models/marts --exclude f_order f_order_line
+      - dbt build --target "{{.DBT_LOCAL_TARGET}}" --project-dir . --profiles-dir ~/.dbt --select +path:models/marts --exclude f_order f_order_line
 
   docs-generate-and-serve:
     desc: Generates and serves dbt docs locally.
     preconditions:
-      - sh: '[ -n "$DBT_TARGET" ]'
-        msg: "DBT_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_TARGET=dev-tastyb task dbt:build-country-dimension"
+      - sh: '[ -n "$DBT_LOCAL_TARGET" ]'
+        msg: "DBT_LOCAL_TARGET is not set. Add it to .env/demo.env or set it per run, e.g. DBT_LOCAL_TARGET=pdb-tastyb task dbt:build-country-dimension"
     internal: true
     cmds:
-      - dbt docs generate --target "{{.DBT_TARGET}}" --project-dir . --profiles-dir ~/.dbt
-      - dbt docs serve --target "{{.DBT_TARGET}}" --project-dir . --profiles-dir ~/.dbt
+      - dbt docs generate --target "{{.DBT_LOCAL_TARGET}}" --project-dir . --profiles-dir ~/.dbt
+      - dbt docs serve --target "{{.DBT_LOCAL_TARGET}}" --project-dir . --profiles-dir ~/.dbt
 
 #  generate-base-model:
 #    cmds:

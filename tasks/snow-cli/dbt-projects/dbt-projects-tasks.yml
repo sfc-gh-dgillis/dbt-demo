@@ -55,7 +55,7 @@ tasks:
       - >-
         snow dbt deploy
         "{{.DBT_PROJECT_DATABASE}}.{{.DBT_PROJECT_SCHEMA}}.{{.DBT_PROJECT_OBJECT_NAME}}"
-        --connection "{{.CLI_CONNECTION_NAME}}"
+        --connection "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}"
         --source "{{.DBT_BUILD_DIR}}"
         --default-target "{{.DBT_DEFAULT_TARGET}}"
         --dbt-version "{{.DBT_RUNTIME_VERSION}}"
@@ -93,10 +93,10 @@ tasks:
       #   - it is exported into this command's environment only, never passed as
       #     an argument, because argv is readable by any process via `ps`.
       - |
-        connection_suffix=$(printf '%s' "{{.CLI_CONNECTION_NAME}}" | tr 'a-z-' 'A-Z_')
+        connection_suffix=$(printf '%s' "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}" | tr 'a-z-' 'A-Z_')
         export "SNOWFLAKE_CONNECTIONS_${connection_suffix}_PASSWORD=$DBT_ENV_SECRET_PAT"
         snow sql \
-          --connection "{{.CLI_CONNECTION_NAME}}" \
+          --connection "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}" \
           --warehouse "{{.DBT_WAREHOUSE}}" \
           --query "EXECUTE DBT PROJECT {{.DBT_PROJECT_DATABASE}}.{{.DBT_PROJECT_SCHEMA}}.{{.DBT_PROJECT_OBJECT_NAME}}
           ARGS = '{{.DBT_ARGS}}'
@@ -116,68 +116,5 @@ tasks:
       # database. Issue the qualified SHOW directly instead, same as dcm-list.
       - >-
         snow sql
-        --connection "{{.CLI_CONNECTION_NAME}}"
+        --connection "{{.SNOW_CLI_ADMIN_CONNECTION_NAME}}"
         --query "SHOW DBT PROJECTS IN SCHEMA {{.DBT_PROJECT_DATABASE}}.{{.DBT_PROJECT_SCHEMA}};"
-
-  # -----------------------------------------------------------------------
-  # Telemetry
-  #
-  # Every EXECUTE DBT PROJECT writes OpenTelemetry logs and trace spans to the
-  # account's event table, but only because LOG_LEVEL, TRACE_LEVEL, and
-  # METRIC_LEVEL are set on the schema holding the project object. That happens in
-  # sql/bootstrap/001-create_util_database.sql; without it every task below
-  # correctly returns nothing.
-  #
-  # None of these take a query id. Each resolves the newest run itself from
-  # DBT_PROJECT_EXECUTION_HISTORY, so the normal loop is "run something, then read
-  # it" with no copying of identifiers in between.
-  #
-  # The queries live in sql/ rather than inline because they are long enough that
-  # embedding them in --query would make both the SQL and the task unreadable.
-  # `snow sql -D` substitutes the <% NAME %> placeholders client-side.
-  # -----------------------------------------------------------------------
-
-  telemetry-last-run-logs:
-    desc: Prints log entries from the most recent run of the dbt project object.
-    internal: true
-    vars:
-      TELEMETRY_SQL: '{{.TELEMETRY_SQL | default "sql/telemetry-last-run-logs.sql"}}'
-      ROW_LIMIT: '{{.ROW_LIMIT | default "500"}}'
-    cmds:
-      # One task body for all three readers: they differ only in which file is
-      # passed, so ERRORS and SPANS below just override TELEMETRY_SQL.
-      - >-
-        snow sql
-        --connection "{{.CLI_CONNECTION_NAME}}"
-        --filename "{{.TELEMETRY_SQL}}"
-        -D "DBT_PROJECT_DATABASE={{.DBT_PROJECT_DATABASE}}"
-        -D "DBT_PROJECT_SCHEMA={{.DBT_PROJECT_SCHEMA}}"
-        -D "DBT_PROJECT_OBJECT_NAME={{.DBT_PROJECT_OBJECT_NAME}}"
-        -D "ROW_LIMIT={{.ROW_LIMIT}}"
-
-  tail-dbt-project-run:
-    desc: Submits a dbt command asynchronously and tails its log events until it finishes.
-    internal: true
-    vars:
-      DBT_PROJECT_OBJECT_NAME: '{{.DBT_PROJECT_OBJECT_NAME | default "tasty_bytes"}}'
-      POLL_SECONDS: '{{.POLL_SECONDS | default "5"}}'
-      MAX_WAIT_SECONDS: '{{.MAX_WAIT_SECONDS | default "1800"}}'
-    cmds:
-      # Wrapped in a script because the query id needed for the tail does not
-      # exist until the run has been submitted, so submit and poll must share a
-      # process. See the header of cmd/tail-dbt-project-run.sh for the two
-      # limitations that come with the async path, the important one being that
-      # `snow dbt execute` cannot select an env.yml ENVIRONMENT.
-      #
-      # Two connections: DBT_EXEC_CONNECTION_NAME submits and polls the run,
-      # CLI_CONNECTION_NAME reads the account-wide event table. The script header
-      # explains why neither can do the other's job.
-      - >-
-        cmd/tail-dbt-project-run.sh
-        "{{.DBT_EXEC_CONNECTION_NAME}}"
-        "{{.CLI_CONNECTION_NAME}}"
-        "{{.DBT_PROJECT_DATABASE}}.{{.DBT_PROJECT_SCHEMA}}.{{.DBT_PROJECT_OBJECT_NAME}}"
-        "{{.DBT_WAREHOUSE}}"
-        "{{.DBT_ARGS}}"
-        "{{.POLL_SECONDS}}"
-        "{{.MAX_WAIT_SECONDS}}"

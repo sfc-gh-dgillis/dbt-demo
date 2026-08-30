@@ -76,7 +76,7 @@ If your profile names that target something else, override it per run rather
 than editing the Taskfile:
 
 ```shell
-DBT_TARGET=dev-pat-auth task dbt-build-marts
+DBT_LOCAL_TARGET=dev-pat-auth task dbt-build-marts
 ```
 
 **3. Mint a PAT if you are using PAT authentication.** The `dev-tastyb` target
@@ -295,7 +295,7 @@ nothing gates the change behind tests and review.
 | | Stage 1 (local) | Stage 2 (in Snowflake) |
 | --- | --- | --- |
 | dbt install | yours, and yours alone | Snowflake-managed, identical for everyone |
-| dbt version | whatever you `pip install`ed (1.9.4 here) | pinned on the object (1.11.11 here) |
+| dbt version | whatever you `pip install`ed (1.11.11 here, matched to the runtime by hand) | pinned on the object (1.11.11 here) |
 | Credentials | a PAT or key pair on your disk | none stored; runs as the calling session |
 | Reproducible by a teammate | no, it is your working tree | yes, it is a numbered version |
 | Schema collisions | shared `modeled` | isolated per developer |

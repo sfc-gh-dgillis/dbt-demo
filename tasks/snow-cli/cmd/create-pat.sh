@@ -37,7 +37,7 @@ set -euo pipefail
 # Usage: cmd/create-pat.sh CONNECTION USER TOKEN_NAME ROLE_RESTRICTION DAYS_TO_EXPIRY [RC_FILE]
 # Run from tasks/snow-cli (the Taskfile include sets that working directory).
 
-CLI_CONNECTION_NAME="${1:-}"
+SNOW_CLI_ADMIN_CONNECTION_NAME="${1:-}"
 PAT_USER="${2:-}"
 PAT_NAME="${3:-}"
 PAT_ROLE_RESTRICTION="${4:-}"
@@ -48,7 +48,7 @@ RC_FILE="${6:-$HOME/.zshrc}"
 # dev-pat-auth target, so it is fixed rather than configurable.
 ENV_VAR_NAME="DBT_ENV_SECRET_PAT"
 
-for required in CLI_CONNECTION_NAME PAT_USER PAT_NAME PAT_ROLE_RESTRICTION PAT_DAYS_TO_EXPIRY; do
+for required in SNOW_CLI_ADMIN_CONNECTION_NAME PAT_USER PAT_NAME PAT_ROLE_RESTRICTION PAT_DAYS_TO_EXPIRY; do
     if [ -z "${!required}" ]; then
         echo "Error: $required is required but was empty." >&2
         exit 1
@@ -76,7 +76,7 @@ echo "Resolving role $PAT_ROLE_RESTRICTION for user $PAT_USER..."
 
 RESOLVED_ROLE="$(
     snow sql \
-        --connection "$CLI_CONNECTION_NAME" \
+        --connection "$SNOW_CLI_ADMIN_CONNECTION_NAME" \
         --format json \
         --query "SHOW GRANTS TO USER $PAT_USER;" 2>/dev/null |
         python3 -c '
@@ -113,7 +113,7 @@ fi
 echo "Removing any existing token $PAT_NAME for $PAT_USER..."
 
 snow sql \
-    --connection "$CLI_CONNECTION_NAME" \
+    --connection "$SNOW_CLI_ADMIN_CONNECTION_NAME" \
     --query "ALTER USER IF EXISTS $PAT_USER REMOVE PROGRAMMATIC ACCESS TOKEN IF EXISTS $PAT_NAME;" \
     >/dev/null
 
@@ -126,7 +126,7 @@ echo "Creating token $PAT_NAME (role $RESOLVED_ROLE, ${PAT_DAYS_TO_EXPIRY}d)..."
 # nowhere near a log.
 PAT_PAYLOAD="$(
     snow sql \
-        --connection "$CLI_CONNECTION_NAME" \
+        --connection "$SNOW_CLI_ADMIN_CONNECTION_NAME" \
         --format json \
         --query "ALTER USER IF EXISTS $PAT_USER ADD PROGRAMMATIC ACCESS TOKEN $PAT_NAME
                      ROLE_RESTRICTION = '$RESOLVED_ROLE'
@@ -278,7 +278,7 @@ unset PAT_SECRET
 # ---------------------------------------------------------------------------
 echo ""
 snow sql \
-    --connection "$CLI_CONNECTION_NAME" \
+    --connection "$SNOW_CLI_ADMIN_CONNECTION_NAME" \
     --query "SHOW USER PROGRAMMATIC ACCESS TOKENS FOR USER $PAT_USER;"
 
 echo ""
