@@ -40,10 +40,6 @@ jobs:
       # The -x is shorthand for --temporary-connection
       - run: snow connection test -x
 
-      # You can remove the "--source" flag if your dbt_project.yml is at root of your repo
-      # The object name is fully qualified so it lands in the dbt project archive.
-      # Passing --database/--schema would not work: those are connection overrides,
-      # not object scoping, so the object would follow the session context instead.
       - name: Create a new tester dbt project object in ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }}
         run: snow dbt deploy ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }}.tester_tasty_bytes_dbt_project_object_gh_action --dbt-version 1.11.11 --external-access-integration dbt_deps_ext_access -x
 
