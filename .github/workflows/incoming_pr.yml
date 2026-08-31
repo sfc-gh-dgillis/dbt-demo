@@ -10,6 +10,35 @@ permissions:
   id-token: write
   pull-requests: write # Required to post the run summary comment.
 
+# Serialize runs within a single pull request.
+#
+# Per-PR object naming stops two different PRs colliding, but every push to the
+# same PR reuses the same clone and the same dbt project object, so successive
+# pushes raced each other. This was observed, not theorised: runs 33395943673
+# (13:15:14-13:28:41Z) and 33396947171 (13:26:04-13:29:06Z) overlapped for
+# 2m37s on PR #3, and DBT_CI_PR_3 carries created_on 13:26:27Z -- the second
+# run's CREATE OR REPLACE DATABASE dropped and recreated the database while the
+# first run was still building into it. Both runs still reported success.
+#
+# Three things went wrong there, all fixed by grouping:
+#   1. CREATE OR REPLACE DATABASE destroyed an in-flight run's working database.
+#   2. Both runs deployed and executed the same dbt project object, which
+#      permits only one concurrent execution.
+#   3. A green check landed for a commit that had already been superseded.
+#
+# cancel-in-progress is true here, the opposite of the deploy-production group
+# in merge_main.yml. A CI run against an outdated commit has no value, so
+# cancelling it removes the race and stops paying for a build nobody will read.
+# Cancelling a half-applied production deploy would be worse than queueing it.
+#
+# Caveat: cancellation stops the runner, so a cancelled run leaves its clone
+# behind. The next run's CREATE OR REPLACE reclaims it and pr_cleanup.yml drops
+# it when the PR closes, so this self-heals -- but the clone does hold storage
+# until one of those happens.
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   run-snowflake-test-dbt-job:
     name: "Run on Incoming PR"
