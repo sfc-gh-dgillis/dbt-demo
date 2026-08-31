@@ -56,9 +56,8 @@ jobs:
       #
       # A database clone is metadata-only, so this is instant and costs no
       # storage until CI writes. Because the clone starts from prod state, the
-      # incremental models have a real baseline to merge into, which is what
-      # makes it affordable to validate the full mart layer -- including the
-      # fact models built on the largest sources -- on every PR.
+      # incremental models have a real baseline to merge into rather than
+      # rebuilding from empty, which is what keeps the run to demo length.
       #
       # Cloning a database carries the grants on its child schemas and tables,
       # but NOT the grants on the database object itself. So USAGE and
@@ -83,18 +82,18 @@ jobs:
             -x
 
       # -------------------------------------------------------------------
-      # Build and test the whole mart layer against the clone.
+      # Build and test the mart layer against the clone.
       #
-      # Two changes from the previous version of this workflow:
+      # --env ci with an --env-vars override of DBT_CURRENT_DB is the mechanism
+      # that redirects the build off production. --env-vars is the highest tier
+      # of value precedence, so it beats the env.yml value unconditionally.
       #
-      #   1. --env ci with an --env-vars override of DBT_CURRENT_DB. This is
-      #      the mechanism that redirects the build off production. --env-vars
-      #      is the highest tier of value precedence, so it beats the env.yml
-      #      value unconditionally.
-      #
-      #   2. f_order and f_order_line are no longer excluded. They were the two
-      #      most expensive and most breakable models in the project, and
-      #      skipping them meant CI went green without ever compiling them.
+      # Selection matches tasks/dbt/dbt-tasks.yml build-dimensions: the
+      # dimensions and their upstream, with the two fact models excluded. They
+      # are built on the 248M and 673M row sources and take too long for a demo
+      # feedback loop. The tradeoff is real -- a change that breaks f_order or
+      # f_order_line will not be caught here -- so keep it in mind when the
+      # project stops being a demo.
       #
       # NOTE: --env and --env-vars do not appear in `snow dbt execute --help` on
       # Snowflake CLI 3.25.0, but they are accepted and functional. They are
@@ -122,6 +121,7 @@ jobs:
             --format json \
             "${CI_DBT_PROJECT}" build \
             --select +path:models/marts \
+            --exclude f_order f_order_line \
             --target prod | tee dbt_run.json
 
       # -------------------------------------------------------------------
@@ -170,7 +170,7 @@ jobs:
               `|---|---|`,
               `| Isolated database | \`${{ env.CI_DATABASE }}\` (clone of \`${{ vars.SNOWFLAKE_DATABASE }}\`) |`,
               `| dbt project object | \`${{ env.CI_DBT_PROJECT }}\` |`,
-              `| Selection | \`build --select +path:models/marts\` (full mart layer) |`,
+              `| Selection | \`build --select +path:models/marts --exclude f_order f_order_line\` |`,
               `| DCM plan | \`util.dcm_project_archive.dbt_prod\` target \`PROD\` |`,
               '',
               `Production was not written to. The clone and the dbt project object are dropped when this PR closes.`,

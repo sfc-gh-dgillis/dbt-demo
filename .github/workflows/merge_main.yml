@@ -88,6 +88,13 @@ jobs:
       # explicitly so the promotion run does not silently change behaviour if
       # the object's default is ever altered out of band.
       #
+      # Selection matches the PR workflow and tasks/dbt/dbt-tasks.yml
+      # build-dimensions, so what merges is what was validated. Note the
+      # consequence: f_order and f_order_line are not built here either, so the
+      # production fact tables only change when someone builds them by hand.
+      # That is a deliberate demo tradeoff, not an oversight. A real deployment
+      # would drop the --exclude and let CD keep the facts current.
+      #
       # Argument order is load-bearing: everything after `build` is forwarded to
       # dbt, so Snowflake CLI flags must precede the project name.
       - name: Build and test production dbt project
@@ -99,6 +106,7 @@ jobs:
             --format json \
             "${PROD_DBT_PROJECT}" build \
             --select +path:models/marts \
+            --exclude f_order f_order_line \
             --target prod | tee dbt_prod_run.json
 
       - name: Upload deploy artifacts
