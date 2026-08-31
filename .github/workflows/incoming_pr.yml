@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  pull-requests: write # Required to post the run summary comment.
 
 jobs:
   run-snowflake-test-dbt-job:
@@ -20,8 +21,18 @@ jobs:
       # SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }} # Required if you aren't using OIDC
       # SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PAT }} # Snowflake password is required if you aren't using OIDC
       SNOWFLAKE_DATABASE: ${{ vars.SNOWFLAKE_DATABASE }}
+      # Only selects where `snow dbt deploy` puts its temporary upload stage.
+      # The database and schema the models are actually built into come from
+      # env.yml by way of dbt_projects_profiles.yml, not from here.
       SNOWFLAKE_SCHEMA: ${{ vars.SNOWFLAKE_SCHEMA }}
       SNOWFLAKE_WAREHOUSE: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+
+      # Every per-PR object is named off the PR number so that concurrent PRs
+      # cannot collide. dbt project objects allow only one concurrent execution
+      # per object, so a shared tester name would serialize -- or fail -- once
+      # two PRs are open at the same time.
+      CI_DATABASE: dbt_ci_pr_${{ github.event.pull_request.number }}
+      CI_DBT_PROJECT: ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }}.tester_tasty_bytes_pr_${{ github.event.pull_request.number }}
 
     steps:
       # Check out repository code
@@ -40,9 +51,135 @@ jobs:
       # The -x is shorthand for --temporary-connection
       - run: snow connection test -x
 
-      - name: Create a new tester dbt project object in ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }}
-        run: snow dbt deploy ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }}.tester_tasty_bytes_dbt_project_object_gh_action --dbt-version 1.11.11 --external-access-integration dbt_deps_ext_access -x
+      # -------------------------------------------------------------------
+      # Isolation: build into a zero-copy clone of production, never prod.
+      #
+      # A database clone is metadata-only, so this is instant and costs no
+      # storage until CI writes. Because the clone starts from prod state, the
+      # incremental models have a real baseline to merge into, which is what
+      # makes it affordable to validate the full mart layer -- including the
+      # fact models built on the largest sources -- on every PR.
+      #
+      # Cloning a database carries the grants on its child schemas and tables,
+      # but NOT the grants on the database object itself. So USAGE and
+      # CREATE SCHEMA have to be re-granted to the access role that
+      # dbt_prod_data_engineer inherits, or dbt cannot resolve the database.
+      # -------------------------------------------------------------------
+      - name: Clone ${{ vars.SNOWFLAKE_DATABASE }} into ${{ env.CI_DATABASE }}
+        run: |
+          snow sql -x --role ACCOUNTADMIN --query "
+            CREATE OR REPLACE DATABASE ${CI_DATABASE}
+              CLONE ${SNOWFLAKE_DATABASE}
+              COMMENT = 'Ephemeral CI clone for PR #${{ github.event.pull_request.number }}. Dropped when the PR closes.';
+            GRANT USAGE, CREATE SCHEMA ON DATABASE ${CI_DATABASE} TO ROLE dbt_prod_rw;
+            GRANT USAGE ON DATABASE ${CI_DATABASE} TO ROLE dbt_prod_ro;
+          "
 
-      # Builds dimension models and runs tests in DAG order, failing early if any upstream test breaks
-      - name: Build and test dbt project in ${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}
-        run: snow dbt execute -x ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }}.tester_tasty_bytes_dbt_project_object_gh_action build --select +path:models/marts --exclude f_order f_order_line --target prod
+      - name: Deploy PR-scoped dbt project object ${{ env.CI_DBT_PROJECT }}
+        run: |
+          snow dbt deploy "${CI_DBT_PROJECT}" \
+            --dbt-version 1.11.11 \
+            --external-access-integration dbt_deps_ext_access \
+            -x
+
+      # -------------------------------------------------------------------
+      # Build and test the whole mart layer against the clone.
+      #
+      # Two changes from the previous version of this workflow:
+      #
+      #   1. --env ci with an --env-vars override of DBT_CURRENT_DB. This is
+      #      the mechanism that redirects the build off production. --env-vars
+      #      is the highest tier of value precedence, so it beats the env.yml
+      #      value unconditionally.
+      #
+      #   2. f_order and f_order_line are no longer excluded. They were the two
+      #      most expensive and most breakable models in the project, and
+      #      skipping them meant CI went green without ever compiling them.
+      #
+      # NOTE: --env and --env-vars do not appear in `snow dbt execute --help` on
+      # Snowflake CLI 3.25.0, but they are accepted and functional. They are
+      # documented under "Execute flags" in the dbt Projects on Snowflake
+      # environment variables guide and require CLI 3.21 or later. Do not
+      # "fix" this back to a raw EXECUTE DBT PROJECT call on the strength of
+      # the help output alone.
+      #
+      # --format json captures the EXECUTE DBT PROJECT result set, whose
+      # OUTPUT_ARCHIVE_URL column locates the run's manifest.json and
+      # run_results.json for the artifact step below.
+      #
+      # Argument order is load-bearing. Everything after the dbt command
+      # (`build`) is forwarded verbatim to dbt, so every Snowflake CLI flag has
+      # to precede the project name. Moving --env after `build` would hand it
+      # to dbt, which does not recognise it.
+      # -------------------------------------------------------------------
+      - name: Build and test dbt project in ${{ env.CI_DATABASE }}
+        run: |
+          snow dbt execute \
+            --env ci \
+            --env-vars "{\"DBT_CURRENT_DB\": \"${CI_DATABASE}\"}" \
+            --dbt-version 1.11.11 \
+            -x \
+            --format json \
+            "${CI_DBT_PROJECT}" build \
+            --select +path:models/marts \
+            --target prod | tee dbt_run.json
+
+      # -------------------------------------------------------------------
+      # Infrastructure drift check.
+      #
+      # The project's premise is DCM-managed infrastructure alongside dbt, but
+      # CI previously validated only the dbt half, so a change under
+      # tasks/snow-cli/dcm/sources/definitions merged without ever being
+      # planned. `snow dcm plan` applies nothing -- it reports the diff.
+      #
+      # --save-output writes tasks/snow-cli/out/plan_result.json. That file is
+      # surfaced as an artifact rather than relying on the printed table,
+      # because DCM models grants as a nested property of the grantee role and
+      # the printed summary therefore under-reports grant changes.
+      # -------------------------------------------------------------------
+      - name: Plan DCM infrastructure changes (no-op check)
+        working-directory: tasks/snow-cli
+        run: |
+          snow dcm plan util.dcm_project_archive.dbt_prod \
+            -x \
+            --role ACCOUNTADMIN \
+            --from dcm \
+            --target PROD \
+            --save-output
+
+      - name: Upload build and plan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-artifacts-pr-${{ github.event.pull_request.number }}
+          path: |
+            dbt_run.json
+            tasks/snow-cli/out/plan_result.json
+          if-no-files-found: warn
+
+      - name: Comment run summary on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const outcome = '${{ job.status }}';
+            const body = [
+              `### dbt CI — ${outcome === 'success' ? 'passed' : 'failed'}`,
+              '',
+              `| | |`,
+              `|---|---|`,
+              `| Isolated database | \`${{ env.CI_DATABASE }}\` (clone of \`${{ vars.SNOWFLAKE_DATABASE }}\`) |`,
+              `| dbt project object | \`${{ env.CI_DBT_PROJECT }}\` |`,
+              `| Selection | \`build --select +path:models/marts\` (full mart layer) |`,
+              `| DCM plan | \`util.dcm_project_archive.dbt_prod\` target \`PROD\` |`,
+              '',
+              `Production was not written to. The clone and the dbt project object are dropped when this PR closes.`,
+              '',
+              `[Run details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
