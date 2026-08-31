@@ -2,7 +2,7 @@ config-version: 2
 
 name: tasty_bytes
 version: "3.0.0"
-require-dbt-version: ">=1.9.0"
+require-dbt-version: ">=1.11.0"
 
 profile: default
 
@@ -12,6 +12,10 @@ test-paths: ["data-tests"]
 seed-paths: ["seeds"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
+# Matches dbt's default for `function-paths`, declared explicitly like every
+# other resource path above. Holds the UDFs the marts call through
+# {{ function(...) }}, which dbt builds as DAG nodes ahead of those models.
+function-paths: ["functions"]
 
 target-path: "target"
 clean-targets:

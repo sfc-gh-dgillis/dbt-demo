@@ -14,7 +14,7 @@ WITH flattened_cte AS (SELECT m.menu_item_id                        AS menu_item
                        FROM {{ ref('stg_pos__menu') }} m,
                             LATERAL FLATTEN(INPUT => m.menu_item_health_metrics_obj:menu_item_health_metrics) hm)
 
-SELECT utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL('menu_item_id', menu_item_id)) AS menu_item_key,
+SELECT {{ function('udf_generate_surrogate_key') }}(o => OBJECT_CONSTRUCT_KEEP_NULL('menu_item_id', menu_item_id)) AS menu_item_key,
        fc.menu_item_id,
        fc.menu_item_name,
        fc.item_category,

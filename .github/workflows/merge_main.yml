@@ -1,0 +1,120 @@
+name: Merge to main
+run-name: Deploy to production (${{ github.sha }})
+
+# The other half of the loop. incoming_pr.yml validates a change in isolation;
+# this promotes it. Without this workflow the production dbt project object
+# util.dbt_project_archive.tasty_bytes only ever changes when somebody deploys
+# it by hand, which means the object in Snowflake can silently diverge from
+# main.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+# A second merge landing while the first is still deploying would race on the
+# same project object, which permits one concurrent execution. Queue instead,
+# and do not cancel in progress -- a half-applied deploy is worse than a slow
+# one.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-production:
+    name: "Deploy and run production dbt project"
+    runs-on: ubuntu-latest
+    environment: prod # Must match the OIDC subject's environment
+    env:
+      SNOWFLAKE_CLI_FEATURES_ENABLE_DBT: true
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_DATABASE: ${{ vars.SNOWFLAKE_DATABASE }}
+      SNOWFLAKE_SCHEMA: ${{ vars.SNOWFLAKE_SCHEMA }}
+      SNOWFLAKE_WAREHOUSE: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+
+      PROD_DBT_PROJECT: ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }}.tasty_bytes
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Install Snowflake CLI
+        uses: snowflakedb/snowflake-actions@v3
+        with:
+          use-oidc: true
+
+      - run: snow connection test -x
+
+      # -------------------------------------------------------------------
+      # Infrastructure first, then dbt.
+      #
+      # Ordering is not incidental: a merge that adds a schema or a grant in
+      # the DCM definitions and a model that depends on it must apply the
+      # infrastructure before dbt tries to build into it.
+      #
+      # This is the mutating counterpart to the `snow dcm plan` step on the PR,
+      # so the diff applied here is the one that was already reviewed.
+      # -------------------------------------------------------------------
+      - name: Deploy DCM infrastructure
+        working-directory: tasks/snow-cli
+        run: |
+          snow dcm deploy \
+            -x \
+            --role ACCOUNTADMIN \
+            --from dcm \
+            --target PROD \
+            --alias "merge ${{ github.sha }} on $(date +%Y%m%d_%H%M%S)"
+
+      # A new version of the project object, not a replacement. --force would
+      # discard every prior version and the run history with them, which is the
+      # audit trail that makes a rollback possible.
+      #
+      # --default-env sets DEFAULT_ENVIRONMENT on the object, so scheduled tasks
+      # and ad-hoc EXECUTE DBT PROJECT calls resolve the prod environment
+      # without having to pass it every time. SHOW DBT PROJECTS currently
+      # reports None for this attribute; after this runs it reports prod.
+      - name: Deploy new version of ${{ env.PROD_DBT_PROJECT }}
+        run: |
+          snow dbt deploy "${PROD_DBT_PROJECT}" \
+            --dbt-version 1.11.11 \
+            --external-access-integration dbt_deps_ext_access \
+            --default-target prod \
+            --default-env prod \
+            -x
+
+      # --env prod is redundant with the --default-env set above, but stated
+      # explicitly so the promotion run does not silently change behaviour if
+      # the object's default is ever altered out of band.
+      #
+      # Selection matches the PR workflow and tasks/dbt/dbt-tasks.yml
+      # build-dimensions, so what merges is what was validated. Note the
+      # consequence: f_order and f_order_line are not built here either, so the
+      # production fact tables only change when someone builds them by hand.
+      # That is a deliberate demo tradeoff, not an oversight. A real deployment
+      # would drop the --exclude and let CD keep the facts current.
+      #
+      # Argument order is load-bearing: everything after `build` is forwarded to
+      # dbt, so Snowflake CLI flags must precede the project name.
+      - name: Build and test production dbt project
+        run: |
+          snow dbt execute \
+            --env prod \
+            --dbt-version 1.11.11 \
+            -x \
+            --format json \
+            "${PROD_DBT_PROJECT}" build \
+            --select +path:models/marts \
+            --exclude f_order f_order_line \
+            --target prod | tee dbt_prod_run.json
+
+      - name: Upload deploy artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-deploy-${{ github.run_id }}
+          path: |
+            dbt_prod_run.json
+            tasks/snow-cli/out/plan_result.json
+          if-no-files-found: warn

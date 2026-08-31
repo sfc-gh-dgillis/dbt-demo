@@ -1,7 +1,7 @@
 WITH pk_cte AS (SELECT f.franchise_id
                 FROM {{ ref('int_franchise_deduped') }} f)
 
-SELECT utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS franchise_key,
+SELECT {{ function('udf_generate_surrogate_key') }}(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS franchise_key,
        f.franchise_id,
        f.first_name,
        f.last_name,

@@ -1,0 +1,71 @@
+name: PR Cleanup
+run-name: Tear down CI resources for PR #${{ github.event.pull_request.number }}
+
+# Runs whether the PR merged or was abandoned. Without this, every PR leaves
+# behind a database and a dbt project object: the clone accrues storage cost as
+# soon as CI writes to it, and the project objects pile up in
+# util.dbt_project_archive with their version history intact.
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+# Deliberately the same group as incoming_pr.yml. Concurrency groups are shared
+# across workflows, so closing a PR while a CI run is still building cancels
+# that run before teardown starts. Without this, cleanup would drop the clone
+# out from under an in-flight build, which fails the run with a confusing
+# "database does not exist" rather than a cancellation.
+#
+# Teardown is the one thing that must not be cancelled once it starts, but
+# cancel-in-progress only cancels *other* members of the group, never the run
+# that just claimed it -- so this job always gets to finish.
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    name: "Drop per-PR CI resources"
+    runs-on: ubuntu-latest
+    environment: prod # Must match the OIDC subject's environment
+    env:
+      SNOWFLAKE_CLI_FEATURES_ENABLE_DBT: true
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_DATABASE: ${{ vars.SNOWFLAKE_DATABASE }}
+      SNOWFLAKE_SCHEMA: ${{ vars.SNOWFLAKE_SCHEMA }}
+      SNOWFLAKE_WAREHOUSE: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+
+      CI_DATABASE: dbt_ci_pr_${{ github.event.pull_request.number }}
+      CI_DBT_PROJECT: ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }}.tester_tasty_bytes_pr_${{ github.event.pull_request.number }}
+
+    steps:
+      - name: Install Snowflake CLI
+        uses: snowflakedb/snowflake-actions@v3
+        with:
+          use-oidc: true
+
+      # Both steps are idempotent and both use `if: always()` so that a failure
+      # to remove one resource does not leave the other orphaned. A cleanup job
+      # that gives up halfway is worse than no cleanup job, because the leak is
+      # then intermittent and harder to notice.
+      - name: Drop dbt project object ${{ env.CI_DBT_PROJECT }}
+        if: always()
+        run: snow dbt drop "${CI_DBT_PROJECT}" --if-exists -x
+
+      - name: Drop CI database ${{ env.CI_DATABASE }}
+        if: always()
+        run: |
+          snow sql -x --role ACCOUNTADMIN \
+            --query "DROP DATABASE IF EXISTS ${CI_DATABASE};"
+
+      # Cheap guard against silent accumulation: if a past PR leaked an object,
+      # it shows up in this listing on the next cleanup run.
+      - name: List remaining dbt project objects
+        if: always()
+        run: |
+          snow sql -x --query \
+            "SHOW DBT PROJECTS IN SCHEMA ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }};"

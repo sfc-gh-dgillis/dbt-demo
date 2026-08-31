@@ -7,7 +7,7 @@ with pk_cte as (select distinct
                                     menu_type
                               from {{ ref('stg_pos__menu') }})
 
-select utilities.udf_generate_surrogate_key(o => object_construct_keep_null(pkc.*)) as menu_type_key,
+select {{ function('udf_generate_surrogate_key') }}(o => object_construct_keep_null(pkc.*)) as menu_type_key,
        dmt.menu_type_id,
        dmt.menu_type
   from distinct_menu_types dmt

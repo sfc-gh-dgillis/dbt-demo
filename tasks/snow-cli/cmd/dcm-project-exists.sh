@@ -24,12 +24,12 @@ set -euo pipefail
 # Usage: cmd/dcm-project-exists.sh CONNECTION TARGET [IDENTIFIER] [PROJECT_DIR]
 # Run from tasks/snow-cli (the Taskfile include sets that working directory).
 
-CLI_CONNECTION_NAME="${1:-}"
+SNOW_CLI_ADMIN_CONNECTION_NAME="${1:-}"
 DCM_TARGET="${2:-}"
 DCM_IDENTIFIER="${3:-}"
 DCM_PROJECT_DIR="${4:-dcm}"
 
-for required in CLI_CONNECTION_NAME DCM_TARGET; do
+for required in SNOW_CLI_ADMIN_CONNECTION_NAME DCM_TARGET; do
     if [ -z "${!required}" ]; then
         echo "Error: $required is required but was empty." >&2
         exit 2
@@ -76,7 +76,7 @@ fi
 # there is no pattern quoting to get wrong and no need to split the FQN apart.
 # Output is discarded; only the exit status is of interest.
 if snow sql \
-    --connection "$CLI_CONNECTION_NAME" \
+    --connection "$SNOW_CLI_ADMIN_CONNECTION_NAME" \
     --query "DESCRIBE DCM PROJECT $DCM_IDENTIFIER;" \
     >/dev/null 2>&1; then
     exit 0

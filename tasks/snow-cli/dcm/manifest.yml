@@ -1,58 +1,26 @@
-# DCM (Database Change Management) project for the dbt demo.
-
 manifest_version: 2
 type: DCM_PROJECT
-default_target: 'DEV'
 
 targets:
-  DEV:
-    account_identifier: SFSENORTHAMERICA-DGILLIS_AWS_USEAST1_V1
-    project_name: 'util.dcm_project_archive.dbt_demo_dev'
-    project_owner: ACCOUNTADMIN
-    templating_config: 'DEV'
   PROD:
+    # The Snowflake account identifier for this target.
     account_identifier: SFSENORTHAMERICA-DGILLIS_AWS_USEAST1_V1
-    project_name: 'util.dcm_project_archive.dbt_demo_prod'
+    #The fully qualified name of the DCM project object.
+    project_name: 'util.dcm_project_archive.dbt_prod'
+    # The role with OWNERSHIP on this project object.
     project_owner: ACCOUNTADMIN
+    # The name of the templating configuration defined in the templating section, to use for this target.
     templating_config: 'PROD'
 
-  # Per-developer sandbox. Both project_name here and `base` in the DBT_PDB
-  # configuration are overridden at run time with the caller's username, so the
-  # real project object is util.dcm_project_archive.dbt_demo_pdb_<user>.
-  #
-  # A per-user project object is mandatory, not cosmetic. A DCM project deploys
-  # "desired state minus current state", so if every developer shared one project
-  # object, the second person to deploy would see the first person's database,
-  # warehouses, and roles as objects no longer in the definitions and DROP all of
-  # them. Separate registrations keep each sandbox's state independent.
-  DBT_PDB:
+  DBT_PDB_DGILLIS:
     account_identifier: SFSENORTHAMERICA-DGILLIS_AWS_USEAST1_V1
-    project_name: 'util.dcm_project_archive.dbt_demo_pdb_unset'
-    project_owner: ACCOUNTADMIN
+    project_name: 'util.dcm_project_archive.xx_dbt_pdb_dgillis'
+    project_owner: SYSADMIN
     templating_config: 'DBT_PDB'
 
 templating:
   defaults:
-    # Base name shared by every object in the target: the database is named
-    # exactly this, and the warehouses and roles are named with it as a prefix
-    # (<base>_xs_wh, <base>_rw). It is the only thing distinguishing one target's
-    # objects from another's.
-    #
-    # This holds the WHOLE name rather than just an environment tag, which is why
-    # the definitions say `{{ base }}` and not `{{ env }}_dbt_demo`. The old form
-    # hardcoded the "_dbt_demo" stem into all 93 references, so a target could
-    # only ever be <something>_dbt_demo -- there was no way to express a name like
-    # dbt_pdb_dgillis.
-    base: 'dbt_demo_prod'
 
-    # Human-readable form used in COMMENT text.
-    env_label: 'prod'
-
-    # The warehouse fleet. Sizes are per-configuration so prod can run bigger
-    # compute without duplicating the definitions.
-    #
-    # Use XXLARGE, not 2XLARGE: DCM rejects the 2XLARGE spelling with
-    # "invalid type of property '2XLARGE' for 'WAREHOUSE_SIZE'".
     warehouses:
       - { suffix: 'xs',  size: 'XSMALL' }
       - { suffix: 's',   size: 'SMALL' }
@@ -68,37 +36,15 @@ templating:
       - { name: 'modeled',   comment: 'Modeled object schema' }
       - { name: 'utilities', comment: 'global utilities and tools' }
 
-    # Users granted the data engineer functional role. Previously a hardcoded
-    # `GRANT ROLE dbt_demo_data_engineer TO USER tastyb`, which failed on any
-    # account without that user.
+    # Users granted the data engineer functional role.
     admin_users: []
 
   configurations:
     PROD:
-      base: 'dbt_demo_prod'
+      base: 'dbt_prod'
       env_label: 'prod'
-      # No standing human access to prod; grant deliberately.
-      admin_users: []
+      admin_users: [github_actions_service_user]
 
-    # Per-developer sandbox. `base` is ALWAYS overridden at run time with
-    # -D "base='dbt_pdb_<user>'" by the task layer, which resolves <user> from
-    # CURRENT_USER(). Runtime --variable is the highest tier of DCM's variable
-    # resolution, above both defaults and this configuration.
-    #
-    # The checked-in value is a deliberate dummy rather than a real developer's
-    # name. It is what a bare `snow dcm deploy --target DBT_PDB` would use if
-    # someone bypassed the tasks, and the failure mode matters: a real name here
-    # would mean that invocation silently adopted -- and on the next deploy could
-    # drop -- that person's sandbox. `dbt_pdb_unset` instead creates obvious junk
-    # that is safe to drop and names the mistake.
-    #
-    # Everything else is inherited from defaults, so a sandbox is a faithful copy
-    # of DEV: same 4 schemas, same 9 raw tables, same 6 warehouses, same 4 roles
-    # with the same grants. To give sandboxes a smaller warehouse fleet than the
-    # shared environments, override `warehouses` here.
     DBT_PDB:
-      base: 'dbt_pdb_unset'
       env_label: 'pdb sandbox'
-      # A sandbox is owned by the developer who deploys it. Granting the
-      # functional role to a fixed list of admins would defeat that.
       admin_users: []
