@@ -41,9 +41,12 @@ jobs:
       - run: snow connection test -x
 
       # You can remove the "--source" flag if your dbt_project.yml is at root of your repo
-      - name: Create a new tester dbt project object in ${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}
-        run: snow dbt deploy tester_tasty_bytes_dbt_project_object_gh_action --dbt-version 1.11.11 --external-access-integration dbt_deps_ext_access -x
+      # The object name is fully qualified so it lands in the dbt project archive.
+      # Passing --database/--schema would not work: those are connection overrides,
+      # not object scoping, so the object would follow the session context instead.
+      - name: Create a new tester dbt project object in ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }}
+        run: snow dbt deploy ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }}.tester_tasty_bytes_dbt_project_object_gh_action --dbt-version 1.11.11 --external-access-integration dbt_deps_ext_access -x
 
       # Builds dimension models and runs tests in DAG order, failing early if any upstream test breaks
       - name: Build and test dbt project in ${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}
-        run: snow dbt execute -x tester_tasty_bytes_dbt_project_object_gh_action build --select +path:models/marts --exclude f_order f_order_line --target prod
+        run: snow dbt execute -x ${{ vars.DBT_PROJECT_DATABASE }}.${{ vars.DBT_PROJECT_SCHEMA }}.tester_tasty_bytes_dbt_project_object_gh_action build --select +path:models/marts --exclude f_order f_order_line --target prod
