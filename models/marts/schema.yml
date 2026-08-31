@@ -200,8 +200,9 @@ models:
             expression: "d_menu_type (menu_type_id)"
         tests:
           - relationships:
-              to: ref('d_menu_type')
-              field: menu_type_id
+              arguments:
+                to: ref('d_menu_type')
+                field: menu_type_id
       - name: menu_type
         description: Type or theme of the menu this item belongs to.
         data_type: VARCHAR
@@ -247,8 +248,9 @@ models:
             expression: "d_menu_item (menu_item_key)"
         tests:
           - relationships:
-              to: ref('d_menu_item')
-              field: menu_item_key
+              arguments:
+                to: ref('d_menu_item')
+                field: menu_item_key
       - name: ingredient_name
         description: Name of the ingredient used in the menu item.
         data_type: VARCHAR
@@ -334,8 +336,9 @@ models:
             expression: "d_truck (truck_key)"
         tests:
           - relationships:
-              to: ref('d_truck')
-              field: truck_key
+              arguments:
+                to: ref('d_truck')
+                field: truck_key
       - name: location_key
         description: Foreign key to the location dimension.
         data_type: VARCHAR
@@ -344,8 +347,9 @@ models:
             expression: "d_location (location_key)"
         tests:
           - relationships:
-              to: ref('d_location')
-              field: location_key
+              arguments:
+                to: ref('d_location')
+                field: location_key
       - name: customer_key
         description: Foreign key to the loyalty member dimension (customer_id).
         data_type: VARCHAR
@@ -399,8 +403,9 @@ models:
             expression: "f_order (order_key)"
         tests:
           - relationships:
-              to: ref('f_order')
-              field: order_key
+              arguments:
+                to: ref('f_order')
+                field: order_key
       - name: menu_item_key
         description: Foreign key to the menu item dimension.
         data_type: VARCHAR
@@ -409,8 +414,9 @@ models:
             expression: "d_menu_item (menu_item_key)"
         tests:
           - relationships:
-              to: ref('d_menu_item')
-              field: menu_item_key
+              arguments:
+                to: ref('d_menu_item')
+                field: menu_item_key
       - name: line_number
         description: Degenerate dimension indicating the sequence number of this line within the order.
         data_type: NUMBER
