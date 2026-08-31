@@ -103,11 +103,33 @@ jobs:
             GRANT USAGE ON DATABASE ${CI_DATABASE} TO ROLE dbt_prod_ro;
           "
 
+      # --default-env prod is required here, not cosmetic.
+      #
+      # `snow dbt deploy` COMPILES the project as part of deploying it, and
+      # compilation resolves env.yml. With no environment named, the deploy falls
+      # through to default_environment, which is dbt_pdb, and that resolves
+      # DBT_CURRENT_DB to 'dbt_pdb_' || CURRENT_USER() -- for the CI service
+      # account that is dbt_pdb_GITHUB_ACTIONS_SERVICE_USER, which does not
+      # exist. Observed as run 33409888887:
+      #   "DBT job failed with exception: Failed to use database
+      #    dbt_pdb_GITHUB_ACTIONS_SERVICE_USER: Object does not exist"
+      #
+      # `ci` is not usable here either: its DBT_CURRENT_DB is deliberately a
+      # database that does not exist, so compilation would fail the same way.
+      # That sentinel is only safe alongside the --env-vars override that the
+      # execute step supplies; it was never viable for a deploy-time compile.
+      #
+      # So compilation resolves against prod, which exists and is only read for
+      # metadata at this stage -- a deploy builds no models. The build itself is
+      # redirected onto the clone by --env ci plus --env-vars below, which are
+      # highest precedence and override this default. merge_main.yml passes the
+      # same flag, which is why CD kept working while this step did not.
       - name: Deploy PR-scoped dbt project object ${{ env.CI_DBT_PROJECT }}
         run: |
           snow dbt deploy "${CI_DBT_PROJECT}" \
             --dbt-version 1.11.11 \
             --external-access-integration dbt_deps_ext_access \
+            --default-env prod \
             -x
 
       # -------------------------------------------------------------------
