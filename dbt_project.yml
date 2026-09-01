@@ -12,9 +12,6 @@ test-paths: ["data-tests"]
 seed-paths: ["seeds"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
-# Matches dbt's default for `function-paths`, declared explicitly like every
-# other resource path above. Holds the UDFs the marts call through
-# {{ function(...) }}, which dbt builds as DAG nodes ahead of those models.
 function-paths: ["functions"]
 
 target-path: "target"
@@ -24,14 +21,6 @@ clean-targets:
 
 vars:
   "dbt_date:time_zone": "America/New_York"
-
-# No `seeds:` block. The seeds/ directory holds no CSVs -- raw source data is
-# loaded by `task demo-up-pdb` / `demo-up-prod`, which COPY INTO the RAW tables
-# from the public Tasty Bytes S3 bucket (see tasks/snow-cli/sql/seed). The
-# previous block configured `+schema: raw` and a `tasty-data` subdirectory gated
-# on var('load_source_data'), neither of which exists, so dbt reported both as
-# unused configuration paths on every single invocation. seed-paths is still
-# declared above so dropping a CSV in seeds/ works without further setup.
 
 models:
   tasty_bytes:
