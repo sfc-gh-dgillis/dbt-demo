@@ -14,8 +14,8 @@ WITH array_cte AS (SELECT m.menu_item_id       AS menu_item_id,
                    FROM array_cte ac,
                         TABLE (FLATTEN(INPUT => ac.ingredient_array, OUTER => TRUE)) ia)
 
-SELECT {{ function('udf_generate_surrogate_key') }}(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*))                           AS menu_item_ingredient_key,
-       {{ function('udf_generate_surrogate_key') }}(o => OBJECT_CONSTRUCT_KEEP_NULL('MENU_ITEM_ID', fc.menu_item_id)) AS menu_item_key,
+SELECT utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*))                           AS menu_item_ingredient_key,
+       utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL('MENU_ITEM_ID', fc.menu_item_id)) AS menu_item_key,
        fc.ingredient_name
 FROM final_cte fc
 

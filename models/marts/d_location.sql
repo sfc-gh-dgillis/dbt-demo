@@ -1,7 +1,7 @@
 WITH pk_cte AS (SELECT l.location_id
                 FROM {{ ref('stg_pos__location') }} l)
 
-SELECT {{ function('udf_generate_surrogate_key') }}(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS location_key,
+SELECT utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS location_key,
        l.location_id,
        l.placekey,         -- foreign key to d_placekey
        l.location_name,
