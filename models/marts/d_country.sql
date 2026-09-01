@@ -2,7 +2,7 @@
 WITH pk_cte AS (SELECT country_id, city_id
                 FROM {{ ref('stg_pos__country') }} spc)
 
-SELECT {{ function('udf_generate_surrogate_key') }}(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS country_key,
+SELECT utilities.udf_generate_surrogate_key(o => OBJECT_CONSTRUCT_KEEP_NULL(pkc.*)) AS country_key,
        spc.country_id,
        spc.country_name,
        spc.iso_currency_alpha_cd,  -- iso 4217 is the international standard for currency codes
