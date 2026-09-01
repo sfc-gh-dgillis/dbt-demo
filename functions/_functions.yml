@@ -1,0 +1,37 @@
+functions:
+  - name: udf_concatenate_object_values
+    description: >
+      Concatenates an OBJECT's values in key order, separated by '-', uppercasing
+      each value and substituting default_null_value for NULL, empty string, and
+      empty array.
+    config:
+      schema: utilities
+      runtime_version: "3.12"
+      entry_point: concatenate_dict_values
+    arguments:
+      - name: o
+        data_type: object
+        description: The object whose values are concatenated, in sorted key order.
+      - name: default_null_value
+        data_type: varchar
+        description: Substituted (uppercased) for any NULL, empty string, or empty array value.
+        default_value: "'_SURROGATE_KEY_NULL_'"
+    returns:
+      data_type: string
+
+  - name: udf_generate_surrogate_key
+    description: >
+      Returns a BINARY MD5 surrogate key for an OBJECT, typically built with
+      OBJECT_CONSTRUCT_KEEP_NULL over the columns forming the natural grain.
+    config:
+      schema: utilities
+    arguments:
+      - name: o
+        data_type: object
+        description: The object whose values form the key, in sorted key order.
+      - name: default_null_value
+        data_type: varchar
+        description: Substituted for NULL, empty string, or empty array before hashing.
+        default_value: "'_dbt_utils_surrogate_key_null_'"
+    returns:
+      data_type: binary
