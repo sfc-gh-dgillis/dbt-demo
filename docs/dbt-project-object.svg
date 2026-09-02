@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="812" viewBox="0 0 1440 812" font-family="Inter, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 z" fill="#5b6b7c"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 z" fill="#29b5e8"/>
+    </marker>
+    <style>
+      .h1 { font-size: 30px; font-weight: 700; fill: #11181f; }
+      .sub { font-size: 15px; fill: #5b6b7c; }
+      .card-title { font-size: 17px; font-weight: 700; fill: #11181f; }
+      .card-sub { font-size: 12px; fill: #5b6b7c; }
+      .mono { font-size: 12.5px; fill: #26313c; font-family: "SF Mono", Menlo, Consolas, monospace; }
+      .monosm { font-size: 11.5px; fill: #5b6b7c; font-family: "SF Mono", Menlo, Consolas, monospace; }
+      .edge { font-size: 12.5px; font-weight: 600; fill: #29b5e8; font-family: "SF Mono", Menlo, Consolas, monospace; }
+      .lane { font-size: 12px; font-weight: 700; fill: #8a98a6; letter-spacing: 1.4px; }
+      .pill { font-size: 11.5px; font-weight: 600; fill: #11181f; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="812" fill="#f7f9fb"/>
+
+  <text class="h1" x="56" y="60">What is a Snowflake DBT PROJECT object?</text>
+  <text class="sub" x="56" y="88">A schema-level Snowflake object that stores a versioned snapshot of your dbt project files — so dbt runs inside Snowflake, on Snowflake compute, under Snowflake RBAC.</text>
+
+  <!-- lanes -->
+  <text class="lane" x="56" y="140">1 · AUTHOR (LOCAL)</text>
+  <text class="lane" x="500" y="140">2 · THE OBJECT (IN SNOWFLAKE)</text>
+  <text class="lane" x="1010" y="140">3 · EXECUTE (SNOWFLAKE COMPUTE)</text>
+
+  <!-- ============ 1. local files ============ -->
+  <rect x="56" y="158" width="360" height="330" rx="14" fill="#ffffff" stroke="#dbe3ea" stroke-width="1.5"/>
+  <text class="card-title" x="80" y="190">Local dbt project directory</text>
+  <text class="card-sub" x="80" y="211">Plain files in git — nothing Snowflake-specific</text>
+  <g class="mono">
+    <text x="80" y="245">dbt_project.yml</text>
+    <text x="80" y="270">profiles.yml</text>
+    <text x="80" y="295">env.yml            <tspan class="monosm">← Snowflake-only</tspan></text>
+    <text x="80" y="320">models/</text>
+    <text x="96" y="345">staging/ · intermediate/ · marts/</text>
+    <text x="80" y="370">macros/ · data-tests/ · seeds/</text>
+  </g>
+  <rect x="80" y="392" width="312" height="72" rx="10" fill="#f2f7fa" stroke="#cfe3ee"/>
+  <text class="card-sub" x="96" y="415" font-weight="700" fill="#11181f">env.yml</text>
+  <text class="monosm" x="96" y="435">named environments (dev · prod · sandbox)</text>
+  <text class="monosm" x="96" y="452">chosen at run time, not at deploy time</text>
+
+  <!-- ============ 2. the object ============ -->
+  <rect x="500" y="158" width="450" height="560" rx="14" fill="#ffffff" stroke="#29b5e8" stroke-width="2"/>
+  <rect x="500" y="158" width="450" height="52" rx="14" fill="#29b5e8"/>
+  <rect x="500" y="196" width="450" height="14" fill="#29b5e8"/>
+  <text x="524" y="191" font-size="16" font-weight="700" fill="#ffffff">DBT PROJECT</text>
+  <text class="monosm" x="524" y="234" fill="#5b6b7c">database.schema.name</text>
+  <text class="mono" x="524" y="256" font-size="14" fill="#11181f" font-weight="600">util.dbt_project_archive.tasty_bytes</text>
+
+  <text class="card-sub" x="524" y="292" font-weight="700" fill="#11181f">Immutable versions — each deploy adds one</text>
+  <g>
+    <rect x="524" y="304" width="402" height="34" rx="8" fill="#f7f9fb" stroke="#dbe3ea"/>
+    <text class="mono" x="540" y="326">VERSION$1</text><text class="monosm" x="700" y="326">earlier snapshot</text>
+    <rect x="524" y="344" width="402" height="34" rx="8" fill="#f7f9fb" stroke="#dbe3ea"/>
+    <text class="mono" x="540" y="366">VERSION$2</text><text class="monosm" x="700" y="366">earlier snapshot</text>
+    <rect x="524" y="384" width="402" height="34" rx="8" fill="#f7f9fb" stroke="#dbe3ea"/>
+    <text class="mono" x="540" y="406">VERSION$3</text><text class="monosm" x="700" y="406">earlier snapshot</text>
+    <rect x="524" y="424" width="402" height="34" rx="8" fill="#e8f7fd" stroke="#29b5e8" stroke-width="1.5"/>
+    <text class="mono" x="540" y="446" font-weight="700">VERSION$4</text><text class="monosm" x="700" y="446" fill="#0d7fa8">DEFAULT</text>
+  </g>
+  <text class="monosm" x="524" y="480">rollback = run an older version · --force destroys history</text>
+
+  <text class="card-sub" x="524" y="516" font-weight="700" fill="#11181f">It is a real Snowflake object, so:</text>
+  <g class="monosm" fill="#26313c">
+    <text x="524" y="540">GRANT USAGE / MONITOR ON DBT PROJECT … TO ROLE …</text>
+    <text x="524" y="562">SHOW DBT PROJECTS IN SCHEMA …</text>
+    <text x="524" y="584">ALTER / DROP DBT PROJECT …</text>
+    <text x="524" y="606">lives in a DCM/IaC-managed schema · replicates · clones</text>
+  </g>
+  <rect x="524" y="626" width="402" height="72" rx="10" fill="#fdf6ec" stroke="#f0dcc0"/>
+  <text class="card-sub" x="540" y="649" font-weight="700" fill="#11181f">Not included in the object</text>
+  <text class="monosm" x="540" y="669">no compute, no role, no target database —</text>
+  <text class="monosm" x="540" y="686">those are supplied per execution</text>
+
+  <!-- ============ 3. execute ============ -->
+  <rect x="1010" y="158" width="374" height="238" rx="14" fill="#ffffff" stroke="#dbe3ea" stroke-width="1.5"/>
+  <text class="card-title" x="1034" y="190">Execution</text>
+  <text class="card-sub" x="1034" y="211">Runs server-side. No local dbt, no laptop creds.</text>
+  <rect x="1034" y="228" width="326" height="96" rx="10" fill="#11181f"/>
+  <g class="mono" fill="#f2f6f9" font-size="12">
+    <text x="1050" y="250">EXECUTE DBT PROJECT</text>
+    <text x="1050" y="270">  util.dbt_project_archive.tasty_bytes</text>
+    <text x="1050" y="290">  ARGS = 'build --target prod'</text>
+    <text x="1050" y="310">  ENVIRONMENT = 'prod';</text>
+  </g>
+  <text class="monosm" x="1034" y="348">warehouse + role come from the calling session</text>
+  <text class="monosm" x="1034" y="368">one object, many environments — dev · sandbox · prod</text>
+
+  <!-- outputs -->
+  <rect x="1010" y="420" width="374" height="176" rx="14" fill="#ffffff" stroke="#dbe3ea" stroke-width="1.5"/>
+  <text class="card-title" x="1034" y="452">Materialized relations</text>
+  <text class="card-sub" x="1034" y="473">Owned by the executing role</text>
+  <g>
+    <rect x="1034" y="488" width="326" height="30" rx="7" fill="#f7f9fb" stroke="#dbe3ea"/>
+    <text class="mono" x="1050" y="508">raw.stg_pos__*</text><text class="monosm" x="1250" y="508">views</text>
+    <rect x="1034" y="524" width="326" height="30" rx="7" fill="#f7f9fb" stroke="#dbe3ea"/>
+    <text class="mono" x="1050" y="544">curated.int_*</text><text class="monosm" x="1250" y="544">tables</text>
+    <rect x="1034" y="560" width="326" height="30" rx="7" fill="#f7f9fb" stroke="#dbe3ea"/>
+    <text class="mono" x="1050" y="580">modeled.d_* · f_*</text><text class="monosm" x="1250" y="580">tables</text>
+  </g>
+
+  <!-- telemetry -->
+  <rect x="1010" y="620" width="374" height="152" rx="14" fill="#ffffff" stroke="#dbe3ea" stroke-width="1.5"/>
+  <text class="card-title" x="1034" y="652">Native observability</text>
+  <g class="monosm" fill="#26313c">
+    <text x="1034" y="678">DBT_PROJECT_EXECUTION_HISTORY</text>
+    <text x="1034" y="700">SNOWFLAKE.TELEMETRY.EVENTS — logs + spans</text>
+    <text x="1034" y="722">one span per dbt node, with duration</text>
+    <text x="1034" y="744">enabled via LOG_LEVEL / TRACE_LEVEL on the schema</text>
+  </g>
+
+  <!-- ============ arrows ============ -->
+  <line x1="416" y1="300" x2="494" y2="300" stroke="#29b5e8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+  <text class="edge" x="404" y="286">snow dbt deploy</text>
+
+  <line x1="950" y1="276" x2="1004" y2="276" stroke="#29b5e8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+  <text class="edge" x="948" y="262">run</text>
+
+  <line x1="1197" y1="396" x2="1197" y2="414" stroke="#5b6b7c" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="1197" y1="596" x2="1197" y2="614" stroke="#5b6b7c" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- footer pills -->
+  <g>
+    <rect x="56" y="530" width="360" height="188" rx="14" fill="#ffffff" stroke="#dbe3ea" stroke-width="1.5"/>
+    <text class="card-title" x="80" y="562">Why it matters</text>
+    <g class="card-sub" fill="#26313c" font-size="12.5">
+      <text x="80" y="590">· Code becomes a governed Snowflake object</text>
+      <text x="80" y="614">· Versioned + rollback-able, no external orchestrator</text>
+      <text x="80" y="638">· Runs under Snowflake RBAC, not a laptop profile</text>
+      <text x="80" y="662">· Schedulable from a Snowflake TASK</text>
+      <text x="80" y="686">· Deploy once, run in any named environment</text>
+    </g>
+  </g>
+
+  <text class="monosm" x="56" y="780" fill="#8a98a6">dbt Projects on Snowflake · object shown: util.dbt_project_archive.tasty_bytes (dbt-demo)</text>
+</svg>
