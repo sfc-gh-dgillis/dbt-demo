@@ -269,24 +269,24 @@ Below are two example targets that could be in your `profiles.yml` file. Configu
 
 ```yaml
 default:
-  target: dev-keypair-auth
+  target: dbt-pdb
   outputs:
-    dev-keypair-auth:
+    dbt-pdb:
       type: snowflake
       # snowflake account identifier
       account: sfsenorthamerica-dgillis_aws_useast1_v1
       # snowflake username
-      user: bmeyer
-      #snowflake role
-      role: dbt_demo_data_engineer
+      user: dgillis
+      # snowflake role
+      role: dbt_pdb_dgillis_data_engineer
 
       # Keypair config
       private_key_path: /Users/dgillis/.ssh/demo_dgillis_keypair_auth_rsa_key.p8
       # private_key_passphrase: [passphrase for the private key, if key is encrypted]
 
-      database: dbt_demo
-      warehouse: dbt_demo_s_wh
-      schema: curated
+      database: dbt_pdb_dgillis
+      warehouse: dbt_pdb_dgillis_s_wh
+      schema: modeled
       threads: 8
       client_session_keep_alive: False
       query_tag: test_query_tag # optional, used for query tagging in Snowflake
@@ -298,22 +298,22 @@ default:
       retry_all: False  # default: false
       reuse_connections: True # default: True if client_session_keep_alive is False, otherwise None
 
-    dev-pat-auth:
+    dbt-pdb-pat:
       type: snowflake
       # snowflake account identifier
       account: sfsenorthamerica-dgillis_aws_useast1_v1
-      #snowflake role
+      # snowflake role
       # Must match the PAT's ROLE_RESTRICTION. A PAT is pinned to a single role,
       # and secondary roles are never applied, so requesting any other role here
       # fails.
-      role: dev_dbt_demo_data_engineer
+      role: dbt_pdb_dgillis_data_engineer
 
-      # User/password auth
+      # User/PAT auth. The DBT_ENV_SECRET_ prefix makes dbt mask the value in logs.
       user: tastyb
       password: "{{ env_var('DBT_ENV_SECRET_PAT') }}"
 
-      database: dev_dbt_demo
-      warehouse: dev_dbt_demo_s_wh
+      database: dbt_pdb_dgillis
+      warehouse: dbt_pdb_dgillis_s_wh
       schema: modeled
       threads: 8
       client_session_keep_alive: False
@@ -327,6 +327,12 @@ default:
       reuse_connections: True # default: True if client_session_keep_alive is False, otherwise None
 ```
 
+> The `database`, `role`, and `warehouse` must all name the same
+> `dbt_pdb_<DBT_PDB_USERNAME>` base. The sandbox roles hold nothing on any other
+> database, and a mismatch surfaces as a misleading `002043 (02000): Object does
+> not exist` rather than a privilege error. Put the target name in
+> `DBT_LOCAL_TARGET` in `.env/demo.env`; the `task dbt:*` tasks require it.
+
 ###### Test your connection
 
 1. Ensure your python virtual environment is activated.
@@ -339,7 +345,7 @@ default:
 From your project root. Use the `dbt debug` command to validate your connection
 
 ```shell
-(.venv) dgillis@mylaptop dbt-demo % ./cmd/build/dbt/local/debug.sh 
+(.venv) dgillis@mylaptop dbt-demo % task dbt:debug
 03:31:02  Running with dbt=1.9.4
 03:31:02  dbt version: 1.9.4
 03:31:02  python version: 3.12.7
@@ -359,9 +365,9 @@ From your project root. Use the `dbt debug` command to validate your connection
 03:31:02  Connection:
 03:31:02    account: sfsenorthamerica-dgillis-aws-useast1-v1
 03:31:02    user: tastyb
-03:31:02    database: dev_dbt_demo
-03:31:02    warehouse: dbt_demo_s_wh
-03:31:02    role: dbt_demo_data_engineer
+03:31:02    database: dbt_pdb_dgillis
+03:31:02    warehouse: dbt_pdb_dgillis_s_wh
+03:31:02    role: dbt_pdb_dgillis_data_engineer
 03:31:02    schema: modeled
 03:31:02    authenticator: None
 03:31:02    oauth_client_id: None
@@ -391,11 +397,17 @@ locally from your laptop, inside Snowflake as a `DBT PROJECT` object, and from C
 against production. See **[docs/dev-loop.md](docs/dev-loop.md)** for the
 developer loop across all three.
 
-The quickest start, once your [connection profile](#connection-profile-setup) is
-in place:
+Stages 1 and 2 both build into a personal sandbox database, so create one first.
+Set `DBT_PDB_USERNAME` in `.env/demo.env`, then:
 
 ```shell
-task dbt-build-marts
+task demo-up-pdb
+```
+
+Once that and your [connection profile](#connection-profile-setup) are in place:
+
+```shell
+task dbt:build-dimensions
 ```
 
 Run `task --list` to see every available entrypoint.
@@ -411,7 +423,7 @@ The `generate_source` command can take a list of table names to include in the s
 This command will generate a [source YAML file](https://docs.getdbt.com/reference/source-configs#configuring-sources) for the specified schema and tables. The `generate_columns` argument, when set to true, will include column definitions in the generated YAML
 
 ```shell
-dbt --quiet run-operation generate_source --target dev-tastyb --args '{"schema_name": "raw", "table_names":["country","franchise","location","menu","order_detail","order_header","truck"], "generate_columns": true}' > models/staging/pos/_source_pos.yml
+dbt --quiet run-operation generate_source --target dbt-pdb --args '{"schema_name": "raw", "table_names":["country","franchise","location","menu","order_detail","order_header","truck"], "generate_columns": true}' > models/staging/pos/_source_pos.yml
 ```
 
 > Note: The `--target` flag is optional. If not provided, the default target in your `profiles.yml` file will be used. The output is redirected to a file in this example, but you can also just run the command and copy/paste the output.
