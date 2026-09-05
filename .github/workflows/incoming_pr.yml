@@ -12,25 +12,6 @@ permissions:
 
 # Serialize runs within a single pull request.
 #
-# Per-PR object naming stops two different PRs colliding, but every push to the
-# same PR reuses the same clone and the same dbt project object, so successive
-# pushes raced each other. This was observed, not theorised: runs 33395943673
-# (13:15:14-13:28:41Z) and 33396947171 (13:26:04-13:29:06Z) overlapped for
-# 2m37s on PR #3, and DBT_CI_PR_3 carries created_on 13:26:27Z -- the second
-# run's CREATE OR REPLACE DATABASE dropped and recreated the database while the
-# first run was still building into it. Both runs still reported success.
-#
-# Three things went wrong there, all fixed by grouping:
-#   1. CREATE OR REPLACE DATABASE destroyed an in-flight run's working database.
-#   2. Both runs deployed and executed the same dbt project object, which
-#      permits only one concurrent execution.
-#   3. A green check landed for a commit that had already been superseded.
-#
-# cancel-in-progress is true here, the opposite of the deploy-production group
-# in merge_main.yml. A CI run against an outdated commit has no value, so
-# cancelling it removes the race and stops paying for a build nobody will read.
-# Cancelling a half-applied production deploy would be worse than queueing it.
-#
 # Caveat: cancellation stops the runner, so a cancelled run leaves its clone
 # behind. The next run's CREATE OR REPLACE reclaims it and pr_cleanup.yml drops
 # it when the PR closes, so this self-heals -- but the clone does hold storage
@@ -67,7 +48,9 @@ jobs:
       # Check out repository code
       # Gets the latest code from the incoming pull request
       - name: Check out repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Install Snowflake CLI
         uses: snowflakedb/snowflake-actions@v3
@@ -82,11 +65,6 @@ jobs:
 
       # -------------------------------------------------------------------
       # Isolation: build into a zero-copy clone of production, never prod.
-      #
-      # A database clone is metadata-only, so this is instant and costs no
-      # storage until CI writes. Because the clone starts from prod state, the
-      # incremental models have a real baseline to merge into rather than
-      # rebuilding from empty, which is what keeps the run to demo length.
       #
       # Cloning a database carries the grants on its child schemas and tables,
       # but NOT the grants on the database object itself. So USAGE and
@@ -126,49 +104,25 @@ jobs:
       # same flag, which is why CD kept working while this step did not.
       - name: Deploy PR-scoped dbt project object ${{ env.CI_DBT_PROJECT }}
         run: |
-          snow dbt deploy "${CI_DBT_PROJECT}" \
+          snow dbt deploy "${CI_DBT_PROJECT}" -x \
             --dbt-version 1.11.11 \
             --external-access-integration dbt_deps_ext_access \
-            --default-env prod \
-            -x
+            --default-env prod
 
       # -------------------------------------------------------------------
       # Build and test the mart layer against the clone.
       #
-      # --env ci with an --env-vars override of DBT_CURRENT_DB is the mechanism
-      # that redirects the build off production. --env-vars is the highest tier
-      # of value precedence, so it beats the env.yml value unconditionally.
-      #
-      # Selection matches tasks/dbt/dbt-tasks.yml build-dimensions: the
-      # dimensions and their upstream, with the two fact models excluded. They
-      # are built on the 248M and 673M row sources and take too long for a demo
-      # feedback loop. The tradeoff is real -- a change that breaks f_order or
-      # f_order_line will not be caught here -- so keep it in mind when the
-      # project stops being a demo.
-      #
-      # NOTE: --env and --env-vars do not appear in `snow dbt execute --help` on
-      # Snowflake CLI 3.25.0, but they are accepted and functional. They are
-      # documented under "Execute flags" in the dbt Projects on Snowflake
-      # environment variables guide and require CLI 3.21 or later. Do not
-      # "fix" this back to a raw EXECUTE DBT PROJECT call on the strength of
-      # the help output alone.
-      #
-      # --format json captures the EXECUTE DBT PROJECT result set, whose
-      # OUTPUT_ARCHIVE_URL column locates the run's manifest.json and
-      # run_results.json for the artifact step below.
-      #
-      # Argument order is load-bearing. Everything after the dbt command
-      # (`build`) is forwarded verbatim to dbt, so every Snowflake CLI flag has
+      # Argument order is important. Everything after the dbt# (`build`) command
+      # is forwarded verbatim to dbt, so every Snowflake CLI flag has
       # to precede the project name. Moving --env after `build` would hand it
       # to dbt, which does not recognise it.
       # -------------------------------------------------------------------
       - name: Build and test dbt project in ${{ env.CI_DATABASE }}
         run: |
-          snow dbt execute \
+          snow dbt execute -x \
+            --dbt-version 1.11.11 \
             --env ci \
             --env-vars "{\"DBT_CURRENT_DB\": \"${CI_DATABASE}\"}" \
-            --dbt-version 1.11.11 \
-            -x \
             --format json \
             "${CI_DBT_PROJECT}" build \
             --select +path:models/marts \
@@ -178,11 +132,6 @@ jobs:
       # -------------------------------------------------------------------
       # Infrastructure drift check.
       #
-      # The project's premise is DCM-managed infrastructure alongside dbt, but
-      # CI previously validated only the dbt half, so a change under
-      # tasks/snow-cli/dcm/sources/definitions merged without ever being
-      # planned. `snow dcm plan` applies nothing -- it reports the diff.
-      #
       # --save-output writes tasks/snow-cli/out/plan_result.json. That file is
       # surfaced as an artifact rather than relying on the printed table,
       # because DCM models grants as a nested property of the grantee role and
@@ -191,8 +140,7 @@ jobs:
       - name: Plan DCM infrastructure changes (no-op check)
         working-directory: tasks/snow-cli
         run: |
-          snow dcm plan util.dcm_project_archive.dbt_prod \
-            -x \
+          snow dcm plan util.dcm_project_archive.dbt_prod -x \
             --role ACCOUNTADMIN \
             --from dcm \
             --target PROD \
@@ -200,7 +148,7 @@ jobs:
 
       - name: Upload build and plan artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ci-artifacts-pr-${{ github.event.pull_request.number }}
           path: |
@@ -210,7 +158,7 @@ jobs:
 
       - name: Comment run summary on PR
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const outcome = '${{ job.status }}';
