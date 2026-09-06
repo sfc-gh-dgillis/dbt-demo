@@ -87,7 +87,7 @@ jobs:
             --format json \
             "${PROD_DBT_PROJECT}" build \
             --select +path:models/marts \
-#            --exclude f_order f_order_line \
+            --exclude f_order f_order_line \
             --target prod | tee dbt_prod_run.json
 
       - name: Upload deploy artifacts
